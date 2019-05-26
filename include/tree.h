@@ -9,7 +9,8 @@
 namespace bptree {
 
 template <unsigned int N, typename K, typename V,
-          typename KeyComparator = std::less<K>>
+          typename KeyComparator = std::less<K>,
+          typename KeyEq = std::equal_to<K>>
 class BTree {
 public:
     BTree(AbstractPageCache* page_cache) : page_cache(page_cache)
@@ -20,21 +21,28 @@ public:
             auto page = page_cache->new_page();
             assert(page->get_id() == META_PAGE_ID);
 
-            root = create_node<LeafNode<N, K, V, KeyComparator>>(nullptr);
+            root =
+                create_node<LeafNode<N, K, V, KeyComparator, KeyEq>>(nullptr);
             write_metadata();
         }
     }
 
-    template <typename T,
-              typename std::enable_if<std::is_base_of<
-                  BaseNode<K, V, KeyComparator>, T>::value>::type* = nullptr>
-    std::unique_ptr<T> create_node(BaseNode<K, V, KeyComparator>* parent)
+    template <
+        typename T,
+        typename std::enable_if<std::is_base_of<
+            BaseNode<K, V, KeyComparator, KeyEq>, T>::value>::type* = nullptr>
+    std::unique_ptr<T> create_node(BaseNode<K, V, KeyComparator, KeyEq>* parent)
     {
         auto page = page_cache->new_page();
         auto node = std::make_unique<T>(this, parent, page->get_id());
         page_cache->unpin_page(page, false);
 
         return node;
+    }
+
+    void get_value(const K& key, std::vector<V>& value_list)
+    {
+        root->get_value(key, value_list);
     }
 
     void insert(const K& key, const V& value)
@@ -44,7 +52,7 @@ public:
 
         if (root_sibling) {
             auto new_root =
-                create_node<InnerNode<N, K, V, KeyComparator>>(nullptr);
+                create_node<InnerNode<N, K, V, KeyComparator, KeyEq>>(nullptr);
 
             root->set_parent(new_root.get());
             root_sibling->set_parent(new_root.get());
@@ -64,8 +72,8 @@ public:
 
     void print() const { root->print(""); } /* for debug purpose */
 
-    std::unique_ptr<BaseNode<K, V, KeyComparator>>
-    read_node(BaseNode<K, V, KeyComparator>* parent, PageID pid)
+    std::unique_ptr<BaseNode<K, V, KeyComparator, KeyEq>>
+    read_node(BaseNode<K, V, KeyComparator, KeyEq>* parent, PageID pid)
     {
         auto page = page_cache->fetch_page(pid);
 
@@ -75,13 +83,13 @@ public:
         auto* buf = page->lock();
 
         uint32_t tag = *reinterpret_cast<uint32_t*>(buf);
-        std::unique_ptr<BaseNode<K, V, KeyComparator>> node;
+        std::unique_ptr<BaseNode<K, V, KeyComparator, KeyEq>> node;
 
         if (tag == INNER_TAG) {
-            node = std::make_unique<InnerNode<N, K, V, KeyComparator>>(
+            node = std::make_unique<InnerNode<N, K, V, KeyComparator, KeyEq>>(
                 this, parent, pid);
         } else if (tag == LEAF_TAG) {
-            node = std::make_unique<LeafNode<N, K, V, KeyComparator>>(
+            node = std::make_unique<LeafNode<N, K, V, KeyComparator, KeyEq>>(
                 this, parent, pid);
         }
 
@@ -94,7 +102,7 @@ public:
         return node;
     }
 
-    void write_node(const BaseNode<K, V, KeyComparator>* node)
+    void write_node(const BaseNode<K, V, KeyComparator, KeyEq>* node)
     {
         auto page = page_cache->fetch_page(node->get_pid());
 
@@ -117,7 +125,7 @@ private:
     static const uint32_t LEAF_TAG = 2;
 
     AbstractPageCache* page_cache;
-    std::unique_ptr<BaseNode<K, V, KeyComparator>> root;
+    std::unique_ptr<BaseNode<K, V, KeyComparator, KeyEq>> root;
 
     /* metadata: | magic(4 bytes) | root page id(4 bytes) | */
     bool read_metadata()

@@ -7,17 +7,20 @@
 
 #include <functional>
 #include <memory>
+#include <vector>
 
 namespace bptree {
 
-template <unsigned int N, typename K, typename V, typename KeyComparator>
+template <unsigned int N, typename K, typename V, typename KeyComparator,
+          typename KeyEq>
 class BTree;
 
-template <typename K, typename V, typename KeyComparator> class BaseNode {
-
+template <typename K, typename V, typename KeyComparator, typename KeyEq>
+class BaseNode {
 public:
-    BaseNode(BaseNode* parent, PageID pid, KeyComparator kcmp = KeyComparator{})
-        : pid(pid), parent(parent), kcmp(kcmp), size(0)
+    BaseNode(BaseNode* parent, PageID pid, KeyComparator kcmp = KeyComparator{},
+             KeyEq keq = KeyEq{})
+        : pid(pid), parent(parent), kcmp(kcmp), keq(keq), size(0)
     {}
 
     PageID get_pid() const { return pid; }
@@ -32,6 +35,7 @@ public:
     virtual void serialize(uint8_t* buf, size_t size) const = 0;
     virtual void deserialize(const uint8_t* buf, size_t size) = 0;
 
+    virtual void get_value(const K& key, std::vector<V>& value_list) = 0;
     virtual std::unique_ptr<BaseNode> insert(const K& key, const V& val,
                                              K& split_key) = 0;
 
@@ -43,30 +47,33 @@ protected:
     BaseNode* parent;
     PageID pid;
     KeyComparator kcmp;
+    KeyEq keq;
 };
 
-template <unsigned int N, typename K, typename V, typename KeyComparator>
+template <unsigned int N, typename K, typename V, typename KeyComparator,
+          typename KeyEq>
 class LeafNode;
 
 template <unsigned int N, typename K, typename V,
-          typename KeyComparator = std::less<K>>
-class InnerNode : public BaseNode<K, V, KeyComparator> {
-    friend class LeafNode<N, K, V, KeyComparator>;
-    friend class BTree<N, K, V, KeyComparator>;
+          typename KeyComparator = std::less<K>,
+          typename KeyEq = std::equal_to<K>>
+class InnerNode : public BaseNode<K, V, KeyComparator, KeyEq> {
+    friend class LeafNode<N, K, V, KeyComparator, KeyEq>;
+    friend class BTree<N, K, V, KeyComparator, KeyEq>;
 
 public:
-    InnerNode(BTree<N, K, V, KeyComparator>* tree,
-              BaseNode<K, V, KeyComparator>* parent,
+    InnerNode(BTree<N, K, V, KeyComparator, KeyEq>* tree,
+              BaseNode<K, V, KeyComparator, KeyEq>* parent,
               PageID pid = Page::INVALID_PAGE_ID,
               KeyComparator kcmp = KeyComparator{})
-        : BaseNode<K, V, KeyComparator>(parent, pid), tree(tree)
+        : BaseNode<K, V, KeyComparator, KeyEq>(parent, pid), tree(tree)
     {
         for (int i = 0; i < N + 1; i++) {
             child_pages[i] = Page::INVALID_PAGE_ID;
         }
     }
 
-    BaseNode<K, V, KeyComparator>* get_child(int idx)
+    BaseNode<K, V, KeyComparator, KeyEq>* get_child(int idx)
     {
         if (child_cache[idx]) {
             /* child in cache */
@@ -105,7 +112,19 @@ public:
         }
     }
 
-    virtual std::unique_ptr<BaseNode<K, V, KeyComparator>>
+    virtual void get_value(const K& key, std::vector<V>& value_list)
+    {
+        /* direct the search to the child */
+        auto it = std::upper_bound(keys.begin(), keys.begin() + this->size, key,
+                                   this->kcmp);
+        int child_idx = it - keys.begin();
+        auto child = get_child(child_idx);
+        if (!child) return;
+
+        child->get_value(key, value_list);
+    }
+
+    virtual std::unique_ptr<BaseNode<K, V, KeyComparator, KeyEq>>
     insert(const K& key, const V& val, K& split_key)
     {
         auto it = std::upper_bound(keys.begin(), keys.begin() + this->size, key,
@@ -132,9 +151,8 @@ public:
         if (this->size < N) return nullptr;
 
         /* need split */
-        auto right_sibling =
-            tree->template create_node<InnerNode<N, K, V, KeyComparator>>(
-                this->parent);
+        auto right_sibling = tree->template create_node<
+            InnerNode<N, K, V, KeyComparator, KeyEq>>(this->parent);
 
         right_sibling->size = this->size - N / 2 - 1;
 
@@ -170,25 +188,26 @@ public:
     }
 
 private:
-    BTree<N, K, V, KeyComparator>* tree;
+    BTree<N, K, V, KeyComparator, KeyEq>* tree;
     std::array<K, N> keys;                 /* actual size is N - 1 */
     std::array<PageID, N + 1> child_pages; /* actual size is N */
-    std::array<std::unique_ptr<BaseNode<K, V, KeyComparator>>, N + 1>
+    std::array<std::unique_ptr<BaseNode<K, V, KeyComparator, KeyEq>>, N + 1>
         child_cache; /* actual size is N */
 };
 
 template <unsigned int N, typename K, typename V,
-          typename KeyComparator = std::less<K>>
-class LeafNode : public BaseNode<K, V, KeyComparator> {
-    friend class InnerNode<N, K, V, KeyComparator>;
-    friend class BTree<N, K, V, KeyComparator>;
+          typename KeyComparator = std::less<K>,
+          typename KeyEq = std::equal_to<K>>
+class LeafNode : public BaseNode<K, V, KeyComparator, KeyEq> {
+    friend class InnerNode<N, K, V, KeyComparator, KeyEq>;
+    friend class BTree<N, K, V, KeyComparator, KeyEq>;
 
 public:
-    LeafNode(BTree<N, K, V, KeyComparator>* tree,
-             BaseNode<K, V, KeyComparator>* parent,
+    LeafNode(BTree<N, K, V, KeyComparator, KeyEq>* tree,
+             BaseNode<K, V, KeyComparator, KeyEq>* parent,
              PageID pid = Page::INVALID_PAGE_ID,
              KeyComparator kcmp = KeyComparator{})
-        : BaseNode<K, V, KeyComparator>(parent, pid, kcmp), tree(tree)
+        : BaseNode<K, V, KeyComparator, KeyEq>(parent, pid, kcmp), tree(tree)
     {}
 
     virtual bool is_leaf() const { return true; }
@@ -213,7 +232,22 @@ public:
         buf += sizeof(V) * (N - 1);
     }
 
-    virtual std::unique_ptr<BaseNode<K, V, KeyComparator>>
+    virtual void get_value(const K& key, std::vector<V>& value_list)
+    {
+        auto lower = std::lower_bound(keys.begin(), keys.begin() + this->size,
+                                      key, this->kcmp);
+
+        if (lower == keys.begin() + this->size) return;
+
+        auto upper = lower;
+        while (this->keq(key, *upper))
+            upper++;
+
+        std::copy(&values[lower - keys.begin()], &values[upper - keys.begin()],
+                  std::back_inserter(value_list));
+    }
+
+    virtual std::unique_ptr<BaseNode<K, V, KeyComparator, KeyEq>>
     insert(const K& key, const V& val, K& split_key)
     {
         if (this->size == 0) { /* empty leaf node */
@@ -240,7 +274,7 @@ public:
 
         /* need split */
         auto right_sibling =
-            tree->template create_node<LeafNode<N, K, V, KeyComparator>>(
+            tree->template create_node<LeafNode<N, K, V, KeyComparator, KeyEq>>(
                 this->parent);
 
         right_sibling->size = this->size - N / 2;
@@ -268,7 +302,7 @@ public:
     }
 
 private:
-    BTree<N, K, V, KeyComparator>* tree;
+    BTree<N, K, V, KeyComparator, KeyEq>* tree;
     std::array<K, N> keys;   /* actual size is N - 1 */
     std::array<V, N> values; /* actual size is N - 1 */
 };
