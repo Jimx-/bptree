@@ -1,0 +1,5 @@
+.ccls-cache
+.clang-format
+.projectile
+compile_commands.json
+build
