@@ -14,8 +14,6 @@ HeapPageCache::HeapPageCache(HeapFile* file, size_t max_pages)
 
 Page* HeapPageCache::alloc_page(PageID id)
 {
-    std::lock_guard<std::mutex> lock(mutex);
-
     if (size() < max_pages) {
         auto page = new Page(id, page_size);
         pages.emplace_back(page);
@@ -47,6 +45,8 @@ Page* HeapPageCache::alloc_page(PageID id)
 
 Page* HeapPageCache::new_page()
 {
+    std::lock_guard<std::mutex> lock(mutex);
+
     PageID new_id = heap_file->new_page();
     auto page = alloc_page(new_id);
 
@@ -57,6 +57,8 @@ Page* HeapPageCache::new_page()
 
 Page* HeapPageCache::fetch_page(PageID id)
 {
+    std::lock_guard<std::mutex> lock(mutex);
+
     auto it = page_map.find(id);
 
     if (it == page_map.end()) {

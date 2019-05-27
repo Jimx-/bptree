@@ -5,11 +5,14 @@
 
 #include "easylogging++.h"
 
+#include <atomic>
 #include <functional>
 #include <memory>
 #include <vector>
 
 namespace bptree {
+
+class OLCRestart : public std::exception {};
 
 template <unsigned int N, typename K, typename V, typename KeyComparator,
           typename KeyEq>
@@ -35,19 +38,57 @@ public:
     virtual void serialize(uint8_t* buf, size_t size) const = 0;
     virtual void deserialize(const uint8_t* buf, size_t size) = 0;
 
-    virtual void get_value(const K& key, std::vector<V>& value_list) = 0;
+    virtual void get_value(const K& key, std::vector<V>& value_list,
+                           uint64_t parent_version) = 0;
     virtual std::unique_ptr<BaseNode> insert(const K& key, const V& val,
-                                             K& split_key) = 0;
+                                             K& split_key,
+                                             uint64_t parent_version) = 0;
+
+    virtual uint64_t read_lock_or_restart(bool& need_restart)
+    {
+        uint64_t version = version_counter.load();
+        need_restart = is_locked(version) || is_obsolete(version);
+        return version;
+    }
+
+    virtual uint64_t upgrade_to_write_lock_or_restart(uint64_t version,
+                                                      bool& need_restart)
+    {
+        if (version_counter.compare_exchange_strong(version, version + 0b10)) {
+            need_restart = false;
+            return version + 0b10;
+        }
+
+        need_restart = true;
+        return version;
+    }
+
+    virtual void write_lock_or_restart(bool& need_restart)
+    {
+        auto version = read_lock_or_restart(need_restart);
+        if (need_restart) return;
+        upgrade_to_write_lock_or_restart(version, need_restart);
+    }
+
+    virtual void write_unlock() { version_counter.fetch_add(0b10); }
+    virtual bool read_unlock_or_restart(uint64_t start_version) const
+    {
+        return (start_version != version_counter.load());
+    }
 
     virtual void
     print(const std::string& padding = "") = 0; /* for debug purpose */
 
-protected:
+public:
     size_t size;
     BaseNode* parent;
     PageID pid;
     KeyComparator kcmp;
     KeyEq keq;
+    std::atomic<uint64_t> version_counter;
+
+    bool is_locked(uint64_t version) const { return (version & 0b10) == 0b10; }
+    bool is_obsolete(uint64_t version) const { return (version & 1) == 1; }
 };
 
 template <unsigned int N, typename K, typename V, typename KeyComparator,
@@ -112,8 +153,19 @@ public:
         }
     }
 
-    virtual void get_value(const K& key, std::vector<V>& value_list)
+    virtual void get_value(const K& key, std::vector<V>& value_list,
+                           uint64_t parent_version)
     {
+        uint64_t version;
+        bool need_restart;
+        version = this->read_lock_or_restart(need_restart);
+        if (need_restart) throw OLCRestart();
+
+        if (this->parent &&
+            this->parent->read_unlock_or_restart(parent_version)) {
+            throw OLCRestart();
+        }
+
         /* direct the search to the child */
         auto it = std::upper_bound(keys.begin(), keys.begin() + this->size, key,
                                    this->kcmp);
@@ -121,20 +173,92 @@ public:
         auto child = get_child(child_idx);
         if (!child) return;
 
-        child->get_value(key, value_list);
+        if (this->read_unlock_or_restart(version)) throw OLCRestart();
+
+        child->get_value(key, value_list, version);
     }
 
     virtual std::unique_ptr<BaseNode<K, V, KeyComparator, KeyEq>>
-    insert(const K& key, const V& val, K& split_key)
+    insert(const K& key, const V& val, K& split_key, uint64_t parent_version)
     {
+        bool need_restart;
+        auto version = this->read_lock_or_restart(need_restart);
+        if (need_restart) throw OLCRestart();
+
+        if (this->size == N - 1) { /* node is full, do eager split */
+            /* upgrade parent's and own lock to write lock */
+            if (this->parent) {
+                parent_version = this->parent->upgrade_to_write_lock_or_restart(
+                    parent_version, need_restart);
+                if (need_restart) throw OLCRestart();
+            }
+
+            version =
+                this->upgrade_to_write_lock_or_restart(version, need_restart);
+            if (need_restart) {
+                if (this->parent) {
+                    this->parent->write_unlock();
+                }
+                throw OLCRestart();
+            }
+
+            /* safe to split now */
+            auto right_sibling = tree->template create_node<
+                InnerNode<N, K, V, KeyComparator, KeyEq>>(this->parent);
+
+            right_sibling->size = this->size - N / 2 - 1;
+
+            ::memcpy(right_sibling->keys.begin(), &this->keys[N / 2 + 1],
+                     sizeof(K) * right_sibling->size);
+            ::memcpy(right_sibling->child_pages.begin(),
+                     &this->child_pages[N / 2 + 1],
+                     sizeof(PageID) * (1 + right_sibling->size));
+
+            for (size_t i = N / 2 + 1, j = 0; i <= this->size; i++, j++) {
+                right_sibling->child_cache[j] = std::move(this->child_cache[i]);
+                if (right_sibling->child_cache[j]) {
+                    right_sibling->child_cache[j]->set_parent(
+                        right_sibling.get());
+                }
+            }
+
+            split_key = this->keys[N / 2];
+            this->size = N / 2;
+
+            tree->write_node(this);
+            tree->write_node(right_sibling.get());
+
+            /* if the current node is the root node, the lock is not released
+             * until new root is created in BTree::insert() */
+            if (this->parent) {
+                this->write_unlock();
+            }
+
+            /* hold parent's lock until the new sibling node has been inserted
+             * into parent node */
+            return right_sibling;
+        }
+
+        if (this->parent) {
+            if (this->parent->read_unlock_or_restart(parent_version))
+                throw OLCRestart();
+        }
+
         auto it = std::upper_bound(keys.begin(), keys.begin() + this->size, key,
                                    this->kcmp);
+        if (this->read_unlock_or_restart(version))
+            throw OLCRestart(); /* make sure current node is still valid */
+
         int child_idx = it - keys.begin();
         auto child = get_child(child_idx);
-        auto new_child = child->insert(key, val, split_key);
+        auto new_child = child->insert(key, val, split_key, version);
 
-        if (!new_child) return nullptr; /* child did not split */
+        if (!new_child)
+            return nullptr; /* child did not split so the lock is already
+                               released in child insert */
 
+        /* insert the key pushed up by the child to current node
+         * we may assume that current node will not overflow at this point */
         ::memmove(&keys[child_idx + 1], &keys[child_idx],
                   (this->size - child_idx) * sizeof(K));
         ::memmove(&child_pages[child_idx + 2], &child_pages[child_idx + 1],
@@ -148,34 +272,13 @@ public:
         child_cache[child_idx + 1] = std::move(new_child);
 
         this->size++;
-        if (this->size < N) return nullptr;
 
-        /* need split */
-        auto right_sibling = tree->template create_node<
-            InnerNode<N, K, V, KeyComparator, KeyEq>>(this->parent);
+        /* current lock is upgraded during child insert, release the lock now
+         * and restart */
+        this->write_unlock();
+        throw OLCRestart();
 
-        right_sibling->size = this->size - N / 2 - 1;
-
-        ::memcpy(right_sibling->keys.begin(), &this->keys[N / 2 + 1],
-                 sizeof(K) * right_sibling->size);
-        ::memcpy(right_sibling->child_pages.begin(),
-                 &this->child_pages[N / 2 + 1],
-                 sizeof(PageID) * (1 + right_sibling->size));
-
-        for (size_t i = N / 2 + 1, j = 0; i < this->size; i++, j++) {
-            right_sibling->child_cache[j] = std::move(this->child_cache[i]);
-        }
-
-        right_sibling->child_cache[right_sibling->size] =
-            std::move(this->child_cache[this->size]);
-
-        split_key = this->keys[N / 2];
-        this->size = N / 2;
-
-        tree->write_node(this);
-        tree->write_node(right_sibling.get());
-
-        return right_sibling;
+        return nullptr;
     }
 
     virtual void print(const std::string& padding = "")
@@ -232,8 +335,18 @@ public:
         buf += sizeof(V) * (N - 1);
     }
 
-    virtual void get_value(const K& key, std::vector<V>& value_list)
+    virtual void get_value(const K& key, std::vector<V>& value_list,
+                           uint64_t parent_version)
     {
+        bool need_restart;
+        auto version = this->read_lock_or_restart(need_restart);
+        if (need_restart) throw OLCRestart();
+
+        if (this->parent &&
+            this->parent->read_unlock_or_restart(parent_version)) {
+            throw OLCRestart();
+        }
+
         auto lower = std::lower_bound(keys.begin(), keys.begin() + this->size,
                                       key, this->kcmp);
 
@@ -245,52 +358,85 @@ public:
 
         std::copy(&values[lower - keys.begin()], &values[upper - keys.begin()],
                   std::back_inserter(value_list));
+
+        if (this->read_unlock_or_restart(version)) throw OLCRestart();
     }
 
     virtual std::unique_ptr<BaseNode<K, V, KeyComparator, KeyEq>>
-    insert(const K& key, const V& val, K& split_key)
+    insert(const K& key, const V& val, K& split_key, uint64_t parent_version)
     {
-        if (this->size == 0) { /* empty leaf node */
-            keys[0] = key;
-            values[0] = val;
-        } else {
-            auto it = std::upper_bound(keys.begin(), keys.begin() + this->size,
-                                       key, this->kcmp);
-            size_t pos = it - keys.begin();
+        bool need_restart;
+        auto version = this->read_lock_or_restart(need_restart);
+        if (need_restart) throw OLCRestart();
 
-            ::memmove(it + 1, it, (this->size - pos) * sizeof(K));
-            ::memmove(&values[pos + 1], &values[pos],
-                      (this->size - pos) * sizeof(V));
+        if (this->size == N - 1) { /* leaf node is full, do eager split */
+            /* upgrade parent's and own lock to write lock */
+            if (this->parent) {
+                parent_version = this->parent->upgrade_to_write_lock_or_restart(
+                    parent_version, need_restart);
+                if (need_restart) throw OLCRestart();
+            }
 
-            keys[pos] = key;
-            values[pos] = val;
-        }
+            version =
+                this->upgrade_to_write_lock_or_restart(version, need_restart);
+            if (need_restart) {
+                if (this->parent) {
+                    this->parent->write_unlock();
+                }
+                throw OLCRestart();
+            }
 
-        this->size++;
-        if (this->size < N) {
+            auto right_sibling = tree->template create_node<
+                LeafNode<N, K, V, KeyComparator, KeyEq>>(this->parent);
+
+            right_sibling->size = this->size - N / 2;
+
+            ::memcpy(right_sibling->keys.begin(), &this->keys[N / 2],
+                     right_sibling->size * sizeof(K));
+            ::memcpy(right_sibling->values.begin(), &this->values[N / 2],
+                     right_sibling->size * sizeof(V));
+
+            split_key = this->keys[N / 2];
+            this->size = N / 2;
+
             tree->write_node(this);
-            return nullptr;
+            tree->write_node(right_sibling.get());
+
+            if (this->parent) {
+                this->write_unlock();
+            }
+
+            /* hold parent's lock */
+            return right_sibling;
         }
 
-        /* need split */
-        auto right_sibling =
-            tree->template create_node<LeafNode<N, K, V, KeyComparator, KeyEq>>(
-                this->parent);
+        /* no need to split, only lock current node */
+        version = this->upgrade_to_write_lock_or_restart(version, need_restart);
+        if (need_restart) throw OLCRestart();
+        if (this->parent) {
+            if (this->parent->read_unlock_or_restart(parent_version)) {
+                this->write_unlock();
+                throw OLCRestart();
+            }
+        }
 
-        right_sibling->size = this->size - N / 2;
+        /* we may assume current will not overflow at this point */
+        auto it = std::upper_bound(keys.begin(), keys.begin() + this->size, key,
+                                   this->kcmp);
+        size_t pos = it - keys.begin();
 
-        ::memcpy(right_sibling->keys.begin(), &this->keys[N / 2],
-                 right_sibling->size * sizeof(K));
-        ::memcpy(right_sibling->values.begin(), &this->values[N / 2],
-                 right_sibling->size * sizeof(V));
+        ::memmove(it + 1, it, (this->size - pos) * sizeof(K));
+        ::memmove(&values[pos + 1], &values[pos],
+                  (this->size - pos) * sizeof(V));
 
-        split_key = this->keys[N / 2];
-        this->size = N / 2;
+        keys[pos] = key;
+        values[pos] = val;
+        this->size++;
 
         tree->write_node(this);
-        tree->write_node(right_sibling.get());
+        this->write_unlock();
 
-        return right_sibling;
+        return nullptr;
     }
 
     virtual void print(const std::string& padding = "")

@@ -42,31 +42,59 @@ public:
 
     void get_value(const K& key, std::vector<V>& value_list)
     {
-        root->get_value(key, value_list);
+        while (true) {
+            try {
+                value_list.clear();
+                auto* root_node = root.get();
+                root_node->get_value(key, value_list, 0);
+                if (root_node != root.get()) continue;
+                break;
+            } catch (OLCRestart&) {
+                continue;
+            }
+        }
     }
 
     void insert(const K& key, const V& value)
     {
-        K split_key;
-        auto root_sibling = root->insert(key, value, split_key);
+        while (true) {
+            try {
+                K split_key;
+                auto old_root = root.get();
+                if (!old_root)
+                    continue; /* old_root may be nullptr when another thread is
+                                 updating the root node pointer */
 
-        if (root_sibling) {
-            auto new_root =
-                create_node<InnerNode<N, K, V, KeyComparator, KeyEq>>(nullptr);
+                auto root_sibling = old_root->insert(key, value, split_key, 0);
 
-            root->set_parent(new_root.get());
-            root_sibling->set_parent(new_root.get());
+                if (root_sibling) {
+                    auto new_root =
+                        create_node<InnerNode<N, K, V, KeyComparator, KeyEq>>(
+                            nullptr);
 
-            new_root->set_size(1);
-            new_root->keys[0] = split_key;
-            new_root->child_pages[0] = root->get_pid();
-            new_root->child_pages[1] = root_sibling->get_pid();
-            new_root->child_cache[0] = std::move(root);
-            new_root->child_cache[1] = std::move(root_sibling);
+                    root->set_parent(new_root.get());
+                    root_sibling->set_parent(new_root.get());
 
-            root = std::move(new_root);
-            write_node(root.get());
-            write_metadata();
+                    new_root->set_size(1);
+                    new_root->keys[0] = split_key;
+                    new_root->child_pages[0] = root->get_pid();
+                    new_root->child_pages[1] = root_sibling->get_pid();
+                    new_root->child_cache[0] = std::move(root);
+                    new_root->child_cache[1] = std::move(root_sibling);
+
+                    root = std::move(new_root);
+                    write_node(root.get());
+                    write_metadata();
+
+                    /* release the lock on the old root */
+                    old_root->write_unlock();
+                    continue;
+                }
+
+                break;
+            } catch (OLCRestart&) {
+                continue;
+            }
         }
     }
 
