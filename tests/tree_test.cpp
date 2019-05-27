@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include "heap_page_cache.h"
+#include "mem_page_cache.h"
 #include "tree.h"
 
 #include <chrono>
@@ -37,7 +38,7 @@ TEST(TreeTest, HandleConcurrentInsert)
     srand(time(0));
 
     bptree::HeapFile heap_file(tmp, true, 4096);
-    bptree::HeapPageCache page_cache(&heap_file, 1024);
+    bptree::MemPageCache page_cache(4096);
 
     bptree::BTree<100, KeyType, ValueType> tree(&page_cache);
 

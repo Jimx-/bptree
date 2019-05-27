@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.5)
 project(bptree)
 
-set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_STANDARD 17)
 
 set(TOPDIR ${PROJECT_SOURCE_DIR})
 
@@ -23,6 +23,7 @@ set(SOURCE_FILES
 set(HEADER_FILES
     include/heap_file.h 
     include/heap_page_cache.h
+    include/mem_page_cache.h
     include/page.h
     include/page_cache.h
     include/tree_node.h)
