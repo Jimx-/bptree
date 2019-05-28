@@ -34,12 +34,7 @@ TEST(TreeTest, HandleInsert)
 
 TEST(TreeTest, HandleConcurrentInsert)
 {
-    char* tmp = tmpnam(NULL);
-    srand(time(0));
-
-    bptree::HeapFile heap_file(tmp, true, 4096);
     bptree::MemPageCache page_cache(4096);
-
     bptree::BTree<100, KeyType, ValueType> tree(&page_cache);
 
     high_resolution_clock::time_point t1 = high_resolution_clock::now();
@@ -74,4 +69,24 @@ TEST(TreeTest, HandleConcurrentInsert)
     LOG(INFO) << "insert: " << duration_cast<duration<double>>(t2 - t1).count()
               << "s, query: "
               << duration_cast<duration<double>>(t3 - t2).count() << "s";
+}
+
+TEST(TreeTest, TreeIterator)
+{
+    bptree::MemPageCache page_cache(4096);
+    bptree::BTree<100, KeyType, ValueType> tree(&page_cache);
+
+    unsigned long long sum1, sum2;
+    sum1 = sum2 = 0;
+
+    for (int i = 0; i < 1000; i++) {
+        tree.insert(i, i);
+        sum1 += i;
+    }
+
+    for (auto&& p : tree) {
+        sum2 += p.first;
+    }
+
+    EXPECT_EQ(sum1, sum2);
 }
