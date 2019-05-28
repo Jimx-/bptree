@@ -2,6 +2,7 @@
 #define _TREE_NODE_H_
 
 #include "page.h"
+#include "serializer.h"
 
 #include "easylogging++.h"
 
@@ -14,8 +15,8 @@ namespace bptree {
 
 class OLCRestart : public std::exception {};
 
-template <unsigned int N, typename K, typename V, typename KeyComparator,
-          typename KeyEq>
+template <unsigned int N, typename K, typename V, typename KeySerializer,
+          typename KeyComparator, typename KeyEq, typename ValueSerializer>
 class BTree;
 
 template <typename K, typename V, typename KeyComparator, typename KeyEq>
@@ -100,23 +101,30 @@ protected:
     bool is_obsolete(uint64_t version) const { return (version & 1) == 1; }
 };
 
-template <unsigned int N, typename K, typename V, typename KeyComparator,
-          typename KeyEq>
+template <unsigned int N, typename K, typename V, typename KeySerializer,
+          typename KeyComparator, typename KeyEq, typename ValueSerializer>
 class LeafNode;
 
 template <unsigned int N, typename K, typename V,
+          typename KeySerializer = CopySerializer<K>,
           typename KeyComparator = std::less<K>,
-          typename KeyEq = std::equal_to<K>>
+          typename KeyEq = std::equal_to<K>,
+          typename ValueSerializer = CopySerializer<V>>
 class InnerNode : public BaseNode<K, V, KeyComparator, KeyEq> {
-    friend class LeafNode<N, K, V, KeyComparator, KeyEq>;
-    friend class BTree<N, K, V, KeyComparator, KeyEq>;
+    friend class LeafNode<N, K, V, KeySerializer, KeyComparator, KeyEq,
+                          ValueSerializer>;
+    friend class BTree<N, K, V, KeySerializer, KeyComparator, KeyEq,
+                       ValueSerializer>;
 
 public:
-    InnerNode(BTree<N, K, V, KeyComparator, KeyEq>* tree,
+    InnerNode(BTree<N, K, V, KeySerializer, KeyComparator, KeyEq,
+                    ValueSerializer>* tree,
               BaseNode<K, V, KeyComparator, KeyEq>* parent,
               PageID pid = Page::INVALID_PAGE_ID,
+              KeySerializer kser = KeySerializer{},
               KeyComparator kcmp = KeyComparator{})
-        : BaseNode<K, V, KeyComparator, KeyEq>(parent, pid), tree(tree)
+        : BaseNode<K, V, KeyComparator, KeyEq>(parent, pid), tree(tree),
+          key_serializer(kser)
     {
         for (int i = 0; i < N + 1; i++) {
             child_pages[i] = Page::INVALID_PAGE_ID;
@@ -159,23 +167,30 @@ public:
         /* | size | keys | child_pages | */
         *reinterpret_cast<uint32_t*>(buf) = (uint32_t)this->size;
         buf += sizeof(uint32_t);
-        *reinterpret_cast<K*>(buf) = this->high_key;
-        buf += sizeof(K);
-        ::memcpy(buf, keys.begin(), sizeof(K) * (N - 1));
-        buf += sizeof(K) * (N - 1);
+        size -= sizeof(uint32_t);
+        size_t nbytes = key_serializer.serialize(buf, size, &this->high_key,
+                                                 (&this->high_key) + 1);
+        buf += nbytes;
+        size -= nbytes;
+        nbytes = key_serializer.serialize(buf, size, keys.begin(), keys.end());
+        buf += nbytes;
+        size -= nbytes;
         ::memcpy(buf, child_pages.begin(), sizeof(PageID) * N);
-        buf += sizeof(PageID) * N;
     }
     virtual void deserialize(const uint8_t* buf, size_t size)
     {
         this->size = (size_t) * reinterpret_cast<const uint32_t*>(buf);
         buf += sizeof(uint32_t);
-        this->high_key = *reinterpret_cast<const K*>(buf);
-        buf += sizeof(K);
-        ::memcpy(keys.begin(), buf, sizeof(K) * (N - 1));
-        buf += sizeof(K) * (N - 1);
+        size -= sizeof(uint32_t);
+        size_t nbytes = key_serializer.deserialize(
+            &this->high_key, (&this->high_key) + 1, buf, size);
+        buf += nbytes;
+        size -= nbytes;
+        nbytes =
+            key_serializer.deserialize(keys.begin(), keys.end(), buf, size);
+        buf += nbytes;
+        size -= nbytes;
         ::memcpy(child_pages.begin(), buf, sizeof(PageID) * N);
-        buf += sizeof(PageID) * N;
         for (auto&& p : child_cache) {
             p.reset();
         }
@@ -239,8 +254,9 @@ public:
             }
 
             /* safe to split now */
-            auto right_sibling = tree->template create_node<
-                InnerNode<N, K, V, KeyComparator, KeyEq>>(this->parent);
+            auto right_sibling = tree->template create_node<InnerNode<
+                N, K, V, KeySerializer, KeyComparator, KeyEq, ValueSerializer>>(
+                this->parent);
 
             right_sibling->size = this->size - N / 2 - 1;
 
@@ -325,6 +341,7 @@ public:
         child_cache[child_idx + 1] = std::move(new_child);
 
         this->size++;
+        tree->write_node(this);
 
         /* current lock is upgraded during child insert, release the lock
          * now and restart */
@@ -346,27 +363,36 @@ public:
     }
 
 private:
-    BTree<N, K, V, KeyComparator, KeyEq>* tree;
-    std::array<K, N> keys;                 /* actual size is N - 1 */
-    std::array<PageID, N + 1> child_pages; /* actual size is N */
-    std::array<std::unique_ptr<BaseNode<K, V, KeyComparator, KeyEq>>, N + 1>
-        child_cache; /* actual size is N */
+    BTree<N, K, V, KeySerializer, KeyComparator, KeyEq, ValueSerializer>* tree;
+    std::array<K, N - 1> keys;
+    std::array<PageID, N> child_pages;
+    std::array<std::unique_ptr<BaseNode<K, V, KeyComparator, KeyEq>>, N>
+        child_cache;
+    KeySerializer key_serializer;
 };
 
 template <unsigned int N, typename K, typename V,
+          typename KeySerializer = CopySerializer<K>,
           typename KeyComparator = std::less<K>,
-          typename KeyEq = std::equal_to<K>>
+          typename KeyEq = std::equal_to<K>,
+          typename ValueSerializer = CopySerializer<V>>
 class LeafNode : public BaseNode<K, V, KeyComparator, KeyEq> {
     friend class InnerNode<N, K, V, KeyComparator, KeyEq>;
-    friend class BTree<N, K, V, KeyComparator, KeyEq>;
-    friend class BTree<N, K, V, KeyComparator, KeyEq>::iterator;
+    friend class BTree<N, K, V, KeySerializer, KeyComparator, KeyEq,
+                       ValueSerializer>;
+    friend class BTree<N, K, V, KeySerializer, KeyComparator, KeyEq,
+                       ValueSerializer>::iterator;
 
 public:
-    LeafNode(BTree<N, K, V, KeyComparator, KeyEq>* tree,
+    LeafNode(BTree<N, K, V, KeySerializer, KeyComparator, KeyEq,
+                   ValueSerializer>* tree,
              BaseNode<K, V, KeyComparator, KeyEq>* parent,
              PageID pid = Page::INVALID_PAGE_ID,
-             KeyComparator kcmp = KeyComparator{})
-        : BaseNode<K, V, KeyComparator, KeyEq>(parent, pid, kcmp), tree(tree)
+             KeySerializer kser = KeySerializer{},
+             KeyComparator kcmp = KeyComparator{},
+             ValueSerializer vser = ValueSerializer{})
+        : BaseNode<K, V, KeyComparator, KeyEq>(parent, pid, kcmp), tree(tree),
+          key_serializer(kser), value_serializer(vser)
     {}
 
     virtual bool is_leaf() const { return true; }
@@ -376,23 +402,32 @@ public:
         /* | size | keys | child_pages | */
         *reinterpret_cast<uint32_t*>(buf) = (uint32_t)this->size;
         buf += sizeof(uint32_t);
-        *reinterpret_cast<K*>(buf) = this->high_key;
-        buf += sizeof(K);
-        ::memcpy(buf, keys.begin(), sizeof(K) * (N - 1));
-        buf += sizeof(K) * (N - 1);
-        ::memcpy(buf, values.begin(), sizeof(V) * (N - 1));
-        buf += sizeof(V) * (N - 1);
+        size -= sizeof(uint32_t);
+        size_t nbytes = key_serializer.serialize(buf, size, &this->high_key,
+                                                 (&this->high_key) + 1);
+        buf += nbytes;
+        size -= nbytes;
+        nbytes = key_serializer.serialize(buf, size, keys.begin(), keys.end());
+        buf += nbytes;
+        size -= nbytes;
+        nbytes =
+            value_serializer.serialize(buf, size, values.begin(), values.end());
     }
     virtual void deserialize(const uint8_t* buf, size_t size)
     {
         this->size = (size_t) * reinterpret_cast<const uint32_t*>(buf);
         buf += sizeof(uint32_t);
-        this->high_key = *reinterpret_cast<const K*>(buf);
-        buf += sizeof(K);
-        ::memcpy(keys.begin(), buf, sizeof(K) * (N - 1));
-        buf += sizeof(K) * (N - 1);
-        ::memcpy(values.begin(), buf, sizeof(V) * (N - 1));
-        buf += sizeof(V) * (N - 1);
+        size -= sizeof(uint32_t);
+        size_t nbytes = key_serializer.deserialize(
+            &this->high_key, (&this->high_key) + 1, buf, size);
+        buf += nbytes;
+        size -= nbytes;
+        nbytes =
+            key_serializer.deserialize(keys.begin(), keys.end(), buf, size);
+        buf += nbytes;
+        size -= nbytes;
+        nbytes = value_serializer.deserialize(values.begin(), values.end(), buf,
+                                              size);
     }
 
     virtual void get_values(const K& key, bool upper_bound, bool collect,
@@ -455,8 +490,9 @@ public:
                 throw OLCRestart();
             }
 
-            auto right_sibling = tree->template create_node<
-                LeafNode<N, K, V, KeyComparator, KeyEq>>(this->parent);
+            auto right_sibling = tree->template create_node<LeafNode<
+                N, K, V, KeySerializer, KeyComparator, KeyEq, ValueSerializer>>(
+                this->parent);
 
             right_sibling->size = this->size - N / 2;
 
@@ -523,9 +559,11 @@ public:
     }
 
 private:
-    BTree<N, K, V, KeyComparator, KeyEq>* tree;
-    std::array<K, N> keys;   /* actual size is N - 1 */
-    std::array<V, N> values; /* actual size is N - 1 */
+    BTree<N, K, V, KeySerializer, KeyComparator, KeyEq, ValueSerializer>* tree;
+    std::array<K, N - 1> keys;
+    std::array<V, N - 1> values;
+    KeySerializer key_serializer;
+    ValueSerializer value_serializer;
 };
 
 } // namespace bptree

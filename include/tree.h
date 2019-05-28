@@ -9,8 +9,10 @@
 namespace bptree {
 
 template <unsigned int N, typename K, typename V,
+          typename KeySerializer = CopySerializer<K>,
           typename KeyComparator = std::less<K>,
-          typename KeyEq = std::equal_to<K>>
+          typename KeyEq = std::equal_to<K>,
+          typename ValueSerializer = CopySerializer<V>>
 class BTree {
 public:
     BTree(AbstractPageCache* page_cache) : page_cache(page_cache)
@@ -21,8 +23,8 @@ public:
             auto page = page_cache->new_page();
             assert(page->get_id() == META_PAGE_ID);
 
-            root =
-                create_node<LeafNode<N, K, V, KeyComparator, KeyEq>>(nullptr);
+            root = create_node<LeafNode<N, K, V, KeySerializer, KeyComparator,
+                                        KeyEq, ValueSerializer>>(nullptr);
             write_metadata();
         }
     }
@@ -87,8 +89,8 @@ public:
 
                 if (root_sibling) {
                     auto new_root =
-                        create_node<InnerNode<N, K, V, KeyComparator, KeyEq>>(
-                            nullptr);
+                        create_node<InnerNode<N, K, V, KeySerializer,
+                                              KeyComparator, KeyEq>>(nullptr);
 
                     root->set_parent(new_root.get());
                     root_sibling->set_parent(new_root.get());
@@ -143,11 +145,14 @@ public:
         std::unique_ptr<BaseNode<K, V, KeyComparator, KeyEq>> node;
 
         if (tag == INNER_TAG) {
-            node = std::make_unique<InnerNode<N, K, V, KeyComparator, KeyEq>>(
+            node = std::make_unique<InnerNode<
+                N, K, V, KeySerializer, KeyComparator, KeyEq, ValueSerializer>>(
                 this, parent, pid);
         } else if (tag == LEAF_TAG) {
-            node = std::make_unique<LeafNode<N, K, V, KeyComparator, KeyEq>>(
-                this, parent, pid);
+            node =
+                std::make_unique<LeafNode<N, K, V, KeySerializer, KeyComparator,
+                                          KeyEq, ValueSerializer>>(this, parent,
+                                                                   pid);
         }
 
         node->deserialize(&buf[sizeof(uint32_t)],
@@ -177,7 +182,8 @@ public:
 
     /* iterator interface */
     class iterator {
-        friend class BTree<N, K, V, KeyComparator, KeyEq>;
+        friend class BTree<N, K, V, KeySerializer, KeyComparator, KeyEq,
+                           ValueSerializer>;
 
     public:
         using self_type = iterator;
@@ -212,7 +218,8 @@ public:
         bool ended;
         KeyComparator kcmp;
 
-        using container_type = BTree<N, K, V, KeyComparator, KeyEq>;
+        using container_type = BTree<N, K, V, KeySerializer, KeyComparator,
+                                     KeyEq, ValueSerializer>;
         container_type* tree;
 
         iterator(container_type* tree, KeyComparator kcmp = KeyComparator{})
@@ -220,16 +227,18 @@ public:
         {
             ended = false;
             auto first_node = tree->read_node(
-                nullptr,
-                BTree<N, K, V, KeyComparator, KeyEq>::FIRST_NODE_PAGE_ID);
+                nullptr, BTree<N, K, V, KeySerializer, KeyComparator, KeyEq,
+                               ValueSerializer>::FIRST_NODE_PAGE_ID);
 
             if (!first_node) {
                 ended = true;
                 return;
             }
 
-            auto leaf = static_cast<LeafNode<N, K, V, KeyComparator, KeyEq>*>(
-                first_node.get());
+            auto leaf =
+                static_cast<LeafNode<N, K, V, KeySerializer, KeyComparator,
+                                     KeyEq, ValueSerializer>*>(
+                    first_node.get());
             key_buf.clear();
             value_buf.clear();
             std::copy(leaf->keys.begin(), leaf->keys.begin() + leaf->get_size(),
