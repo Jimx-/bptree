@@ -291,6 +291,7 @@ public:
             if (need_restart) throw OLCRestart();
 
             if (this->high_key < key) this->high_key = key;
+            tree->write_node(this);
             this->write_unlock();
             throw OLCRestart();
         }

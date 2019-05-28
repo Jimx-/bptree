@@ -117,7 +117,17 @@ public:
         }
     }
 
-    void print() const { root->print(""); } /* for debug purpose */
+    void print() const
+    {
+        while (true) {
+            try {
+                root->print("");
+                break;
+            } catch (OLCRestart&) {
+                continue;
+            }
+        }
+    } /* for debug purpose */
 
     std::unique_ptr<BaseNode<K, V, KeyComparator, KeyEq>>
     read_node(BaseNode<K, V, KeyComparator, KeyEq>* parent, PageID pid)
