@@ -1,7 +1,7 @@
 #ifndef _HEAP_FILE_H_
 #define _HEAP_FILE_H_
 
-#include "page.h"
+#include "bptree/page.h"
 
 #include <mutex>
 #include <stdexcept>

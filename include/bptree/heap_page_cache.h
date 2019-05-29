@@ -1,8 +1,8 @@
 #ifndef _HEAP_PAGE_CACHE_H_
 #define _HEAP_PAGE_CACHE_H_
 
-#include "heap_file.h"
-#include "page_cache.h"
+#include "bptree/heap_file.h"
+#include "bptree/page_cache.h"
 
 #include <atomic>
 #include <cstdint>

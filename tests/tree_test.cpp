@@ -1,8 +1,8 @@
 #include <gtest/gtest.h>
 
-#include "heap_page_cache.h"
-#include "mem_page_cache.h"
-#include "tree.h"
+#include "bptree/heap_page_cache.h"
+#include "bptree/mem_page_cache.h"
+#include "bptree/tree.h"
 
 #include <chrono>
 #include <cstdio>

@@ -1,7 +1,7 @@
 #ifndef _PAGE_CACHE_H_
 #define _PAGE_CACHE_H_
 
-#include "page.h"
+#include "bptree/page.h"
 
 namespace bptree {
 

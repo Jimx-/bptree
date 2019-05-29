@@ -1,8 +1,8 @@
 #ifndef _TREE_NODE_H_
 #define _TREE_NODE_H_
 
-#include "page.h"
-#include "serializer.h"
+#include "bptree/page.h"
+#include "bptree/serializer.h"
 
 #include "easylogging++.h"
 
@@ -377,7 +377,8 @@ template <unsigned int N, typename K, typename V,
           typename KeyEq = std::equal_to<K>,
           typename ValueSerializer = CopySerializer<V>>
 class LeafNode : public BaseNode<K, V, KeyComparator, KeyEq> {
-    friend class InnerNode<N, K, V, KeyComparator, KeyEq>;
+    friend class InnerNode<N, K, V, KeySerializer, KeyComparator, KeyEq,
+                           ValueSerializer>;
     friend class BTree<N, K, V, KeySerializer, KeyComparator, KeyEq,
                        ValueSerializer>;
     friend class BTree<N, K, V, KeySerializer, KeyComparator, KeyEq,

@@ -1,3 +1,3 @@
-#include "tree.h"
+#include "bptree/tree.h"
 
 namespace bptree {} // namespace bptree

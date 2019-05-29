@@ -1,7 +1,7 @@
 #ifndef _MEM_PAGE_CACHE_H_
 #define _MEM_PAGE_CACHE_H_
 
-#include "page_cache.h"
+#include "bptree/page_cache.h"
 
 #include <shared_mutex>
 #include <unordered_map>

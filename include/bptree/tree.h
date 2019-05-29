@@ -1,8 +1,8 @@
 #ifndef _TREE_H_
 #define _TREE_H_
 
-#include "page_cache.h"
-#include "tree_node.h"
+#include "bptree/page_cache.h"
+#include "bptree/tree_node.h"
 
 #include <cassert>
 

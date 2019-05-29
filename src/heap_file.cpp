@@ -1,4 +1,4 @@
-#include "heap_file.h"
+#include "bptree/heap_file.h"
 
 #include <cstdlib>
 #include <fcntl.h>
