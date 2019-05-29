@@ -7,6 +7,7 @@
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
+#include <iostream>
 #include <thread>
 
 using namespace std::chrono;
@@ -24,12 +25,12 @@ TEST(TreeTest, HandleInsert)
 
     bptree::BTree<8, KeyType, ValueType> tree(&page_cache);
 
-    for (int i = 0; i < 20; i++) {
+    for (int i = 0; i < 10; i++) {
         KeyType k = rand() % 10000;
         tree.insert(k, rand() % 1000000);
     }
 
-    tree.print();
+    std::cout << tree;
 }
 
 TEST(TreeTest, HandleConcurrentInsert)
@@ -66,9 +67,10 @@ TEST(TreeTest, HandleConcurrentInsert)
 
     high_resolution_clock::time_point t3 = high_resolution_clock::now();
 
-    LOG(INFO) << "insert: " << duration_cast<duration<double>>(t2 - t1).count()
+    std::cout << "insert: " << duration_cast<duration<double>>(t2 - t1).count()
               << "s, query: "
-              << duration_cast<duration<double>>(t3 - t2).count() << "s";
+              << duration_cast<duration<double>>(t3 - t2).count() << "s"
+              << std::endl;
 }
 
 TEST(TreeTest, TreeIterator)

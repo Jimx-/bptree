@@ -4,11 +4,10 @@
 #include "bptree/page.h"
 #include "bptree/serializer.h"
 
-#include "easylogging++.h"
-
 #include <atomic>
 #include <functional>
 #include <memory>
+#include <ostream>
 #include <vector>
 
 namespace bptree {
@@ -86,7 +85,8 @@ public:
     }
 
     virtual void
-    print(const std::string& padding = "") = 0; /* for debug purpose */
+    print(std::ostream& os,
+          const std::string& padding = "") = 0; /* for debug purpose */
 
 protected:
     size_t size;
@@ -351,14 +351,13 @@ public:
         return nullptr;
     }
 
-    virtual void print(const std::string& padding = "")
+    virtual void print(std::ostream& os, const std::string& padding = "")
     {
         uint64_t version;
-        LOG(INFO) << padding << this->high_key;
-        this->get_child(0, true, version)->print(padding + "    ");
+        this->get_child(0, true, version)->print(os, padding + "    ");
         for (int i = 0; i < this->size; i++) {
-            LOG(INFO) << padding << keys[i];
-            this->get_child(i + 1, true, version)->print(padding + "    ");
+            os << padding << keys[i] << std::endl;
+            this->get_child(i + 1, true, version)->print(os, padding + "    ");
         }
     }
 
@@ -549,13 +548,13 @@ public:
         return nullptr;
     }
 
-    virtual void print(const std::string& padding = "")
+    virtual void print(std::ostream& os, const std::string& padding = "")
     {
-        LOG(INFO) << padding << "Page ID: " << this->get_pid();
-        LOG(INFO) << padding << "High key: " << this->high_key;
+        os << padding << "Page ID: " << this->get_pid() << std::endl;
+        os << padding << "High key: " << this->high_key << std::endl;
 
         for (int i = 0; i < this->size; i++) {
-            LOG(INFO) << padding << keys[i] << " -> " << values[i];
+            os << padding << keys[i] << " -> " << values[i] << std::endl;
         }
     }
 

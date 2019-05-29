@@ -9,7 +9,6 @@ set(TOPDIR ${PROJECT_SOURCE_DIR})
 
 include_directories(
     ${TOPDIR}/include
-    ${TOPDIR}/3rdparty/easyloggingpp/src
 )
 
 set(SOURCE_FILES
@@ -26,8 +25,7 @@ set(HEADER_FILES
     ${TOPDIR}/include/bptree/page_cache.h
     ${TOPDIR}/include/bptree/tree_node.h)
 
-set(EXT_SOURCE_FILES 
-    ${TOPDIR}/3rdparty/easyloggingpp/src/easylogging++.cc)
+set(EXT_SOURCE_FILES )
 
 set(LIBRARIES
     pthread
@@ -42,7 +40,6 @@ enable_testing()
 include_directories(${gtest_SOURCE_DIR}/include ${gtest_SOURCE_DIR})
 
 set(TEST_SOURCE_FILES
-    ${TOPDIR}/tests/main.cpp
     ${TOPDIR}/tests/tree_test.cpp)
     
 add_executable(bptree_unit_tests ${EXT_SOURCE_FILES} ${TEST_SOURCE_FILES})

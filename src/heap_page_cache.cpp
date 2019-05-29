@@ -1,7 +1,6 @@
 #include "bptree/heap_page_cache.h"
 
-#include "easylogging++.h"
-
+#include <algorithm>
 #include <cassert>
 
 namespace bptree {

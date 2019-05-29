@@ -5,6 +5,7 @@
 #include "bptree/tree_node.h"
 
 #include <cassert>
+#include <iostream>
 
 namespace bptree {
 
@@ -119,17 +120,22 @@ public:
         }
     }
 
-    void print() const
+    void print(std::ostream& os) const
     {
         while (true) {
             try {
-                root->print("");
+                root->print(os, "");
                 break;
             } catch (OLCRestart&) {
                 continue;
             }
         }
     } /* for debug purpose */
+    friend std::ostream& operator<<(std::ostream& os, BTree& tree)
+    {
+        tree.print(os);
+        return os;
+    }
 
     std::unique_ptr<BaseNode<K, V, KeyComparator, KeyEq>>
     read_node(BaseNode<K, V, KeyComparator, KeyEq>* parent, PageID pid)
