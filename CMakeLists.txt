@@ -33,6 +33,7 @@ set(LIBRARIES
  
 add_library(bptree STATIC ${SOURCE_FILES} ${HEADER_FILES} ${EXT_SOURCE_FILES})
 target_link_libraries(bptree ${LIBRARIES}) 
+install(TARGETS bptree DESTINATION lib)
 
 if (BPTREE_BUILD_TESTS)
 add_subdirectory(${TOPDIR}/3rdparty/googletest/googletest)
