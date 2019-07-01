@@ -44,5 +44,5 @@ set(TEST_SOURCE_FILES
     
 add_executable(bptree_unit_tests ${EXT_SOURCE_FILES} ${TEST_SOURCE_FILES})
 target_link_libraries(bptree_unit_tests bptree gtest gtest_main ${LIBRARIES})
-add_test(bptree_tests unit_tests)
+add_test(bptree_tests bptree_unit_tests)
 endif()
