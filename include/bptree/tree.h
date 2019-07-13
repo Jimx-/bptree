@@ -1,5 +1,5 @@
-#ifndef _TREE_H_
-#define _TREE_H_
+#ifndef _BPTREE_TREE_H_
+#define _BPTREE_TREE_H_
 
 #include "bptree/page_cache.h"
 #include "bptree/tree_node.h"

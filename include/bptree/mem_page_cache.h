@@ -1,5 +1,5 @@
-#ifndef _MEM_PAGE_CACHE_H_
-#define _MEM_PAGE_CACHE_H_
+#ifndef _BPTREE_MEM_PAGE_CACHE_H_
+#define _BPTREE_MEM_PAGE_CACHE_H_
 
 #include "bptree/page_cache.h"
 

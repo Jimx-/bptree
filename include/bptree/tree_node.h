@@ -1,5 +1,5 @@
-#ifndef _TREE_NODE_H_
-#define _TREE_NODE_H_
+#ifndef _BPTREE_TREE_NODE_H_
+#define _BPTREE_TREE_NODE_H_
 
 #include "bptree/page.h"
 #include "bptree/serializer.h"

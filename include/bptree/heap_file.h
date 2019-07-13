@@ -1,5 +1,5 @@
-#ifndef _HEAP_FILE_H_
-#define _HEAP_FILE_H_
+#ifndef _BPTREE_HEAP_FILE_H_
+#define _BPTREE_HEAP_FILE_H_
 
 #include "bptree/page.h"
 

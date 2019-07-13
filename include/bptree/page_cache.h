@@ -1,5 +1,5 @@
-#ifndef _PAGE_CACHE_H_
-#define _PAGE_CACHE_H_
+#ifndef _BPTREE_PAGE_CACHE_H_
+#define _BPTREE_PAGE_CACHE_H_
 
 #include "bptree/page.h"
 

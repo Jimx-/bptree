@@ -1,5 +1,5 @@
-#ifndef _SERIALIZER_H_
-#define _SERIALIZER_H_
+#ifndef _BPTREE_SERIALIZER_H_
+#define _BPTREE_SERIALIZER_H_
 
 #include <cstddef>
 #include <cstdint>

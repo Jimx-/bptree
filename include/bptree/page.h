@@ -1,5 +1,5 @@
-#ifndef _PAGE_H_
-#define _PAGE_H_
+#ifndef _BPTREE_PAGE_H_
+#define _BPTREE_PAGE_H_
 
 #include <atomic>
 #include <cstddef>
