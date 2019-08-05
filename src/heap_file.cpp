@@ -8,7 +8,7 @@
 
 namespace bptree {
 
-HeapFile::HeapFile(const std::string& filename, bool create, size_t page_size)
+HeapFile::HeapFile(std::string_view filename, bool create, size_t page_size)
     : filename(filename), page_size(page_size)
 {
     fd = -1;

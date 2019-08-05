@@ -16,8 +16,7 @@ public:
 
 class HeapFile {
 public:
-    explicit HeapFile(const std::string& filename, bool create,
-                      size_t page_size);
+    explicit HeapFile(std::string_view filename, bool create, size_t page_size);
     ~HeapFile();
 
     bool is_open() const { return fd != -1; }

@@ -16,7 +16,8 @@ namespace bptree {
 
 class HeapPageCache : public AbstractPageCache {
 public:
-    HeapPageCache(HeapFile* file, size_t max_pages);
+    HeapPageCache(std::string_view filename, bool create,
+                  size_t max_pages = 4096, size_t page_size = 4096);
 
     virtual Page* new_page();
     virtual Page* fetch_page(PageID id);
@@ -31,7 +32,7 @@ public:
     virtual size_t get_page_size() const { return page_size; }
 
 private:
-    HeapFile* heap_file;
+    std::unique_ptr<HeapFile> heap_file;
     size_t page_size;
     size_t max_pages;
     std::mutex mutex;

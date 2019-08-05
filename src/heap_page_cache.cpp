@@ -5,10 +5,12 @@
 
 namespace bptree {
 
-HeapPageCache::HeapPageCache(HeapFile* file, size_t max_pages)
-    : heap_file(file), max_pages(max_pages)
+HeapPageCache::HeapPageCache(std::string_view filename, bool create,
+                             size_t max_pages, size_t page_size)
+    : heap_file(std::make_unique<HeapFile>(filename, create, page_size)),
+      max_pages(max_pages)
 {
-    page_size = file->get_page_size();
+    this->page_size = page_size;
 }
 
 Page* HeapPageCache::alloc_page(PageID id)
