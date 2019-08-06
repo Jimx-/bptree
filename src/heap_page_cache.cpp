@@ -24,7 +24,7 @@ Page* HeapPageCache::alloc_page(PageID id)
     }
 
     PageID victim_id;
-    if (!victim(victim_id)) {
+    if (!lru_victim(victim_id)) {
         return nullptr;
     }
 
@@ -84,7 +84,7 @@ void HeapPageCache::pin_page(Page* page)
     page->lock();
 
     if (!page->get_pin_count()) {
-        erase_lru(page->get_id());
+        lru_erase(page->get_id());
     }
     page->pin();
 
@@ -104,7 +104,7 @@ void HeapPageCache::unpin_page(Page* page, bool dirty)
     page->unpin();
 
     if (!page->get_pin_count()) {
-        insert_lru(page->get_id());
+        lru_insert(page->get_id());
     }
 
     page->unlock();
@@ -135,24 +135,26 @@ void HeapPageCache::add_page(Page* page)
     page_map[page->get_id()] = page;
 }
 
-void HeapPageCache::insert_lru(PageID id)
+void HeapPageCache::lru_insert(PageID id)
 {
     std::lock_guard<std::mutex> lock(lru_mutex);
     lru_list.push_front(id);
+    lru_map.emplace(id, lru_list.begin());
 }
 
-void HeapPageCache::erase_lru(PageID id)
+void HeapPageCache::lru_erase(PageID id)
 {
     std::lock_guard<std::mutex> lock(lru_mutex);
 
-    auto it = std::find(lru_list.begin(), lru_list.end(), id);
+    auto it = lru_map.find(id);
 
-    if (it != lru_list.end()) {
-        lru_list.erase(it);
+    if (it != lru_map.end()) {
+        lru_list.erase(it->second);
+        lru_map.erase(it);
     }
 }
 
-bool HeapPageCache::victim(PageID& id)
+bool HeapPageCache::lru_victim(PageID& id)
 {
     std::lock_guard<std::mutex> lock(lru_mutex);
 
@@ -161,7 +163,9 @@ bool HeapPageCache::victim(PageID& id)
     }
 
     id = lru_list.back();
+    lru_map.erase(id);
     lru_list.pop_back();
+
     return true;
 }
 

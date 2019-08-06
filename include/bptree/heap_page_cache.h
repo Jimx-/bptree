@@ -40,14 +40,15 @@ private:
 
     std::list<std::unique_ptr<Page>> pages;
     std::unordered_map<PageID, Page*> page_map;
-    std::deque<PageID> lru_list;
+    std::list<PageID> lru_list;
+    std::unordered_map<PageID, std::list<PageID>::iterator> lru_map;
 
     Page* alloc_page(PageID new_id);
     void add_page(Page* page);
 
-    void insert_lru(PageID id);
-    void erase_lru(PageID id);
-    bool victim(PageID& id);
+    void lru_insert(PageID id);
+    void lru_erase(PageID id);
+    bool lru_victim(PageID& id);
 };
 
 } // namespace bptree
