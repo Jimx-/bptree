@@ -29,6 +29,10 @@ public:
 
     void unlock() { mutex.unlock(); }
 
+    uint8_t* get_buffer_locked() {
+        return buffer.get();
+    }
+
     void pin() { pin_count++; }
     void unpin() { pin_count--; }
     int32_t get_pin_count() const { return pin_count; }
