@@ -15,10 +15,9 @@ class Page {
 public:
     static const PageID INVALID_PAGE_ID = 0;
 
-    explicit Page(PageID id, size_t size) : id(id), size(size), dirty(false)
+    explicit Page(PageID id, size_t size) : id(id), size(size), dirty(false), pin_count(0)
     {
         buffer = std::make_unique<uint8_t[]>(size);
-        pin_count = 0;
     }
 
     uint8_t* write_lock()
@@ -33,7 +32,6 @@ public:
         mutex.lock_shared();
         return buffer.get();
     }
-
     void read_unlock()
     {
         mutex.unlock_shared();
@@ -43,9 +41,8 @@ public:
         return buffer.get();
     }
 
-    void pin() { pin_count++; }
-    void unpin() { pin_count--; }
-    int32_t get_pin_count() const { return pin_count; }
+    int32_t pin() { return pin_count.fetch_add(1); }
+    int32_t unpin() { return pin_count.fetch_add(-1); }
 
     void set_id(PageID pid) { id = pid; }
     PageID get_id() const { return id; }
@@ -59,7 +56,7 @@ private:
     std::unique_ptr<uint8_t[]> buffer;
     size_t size;
     bool dirty;
-    int32_t pin_count;
+    std::atomic<int32_t> pin_count;
     std::shared_mutex mutex;
 };
 

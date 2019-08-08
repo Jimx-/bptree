@@ -81,33 +81,19 @@ Page* HeapPageCache::fetch_page(PageID id)
 
 void HeapPageCache::pin_page(Page* page)
 {
-    page->write_lock();
-
-    if (!page->get_pin_count()) {
+    if (page->pin() == 0) {
         lru_erase(page->get_id());
     }
-    page->pin();
-
-    page->write_unlock();
 }
 
 void HeapPageCache::unpin_page(Page* page, bool dirty)
 {
-    page->write_lock();
-
-    if (!page->get_pin_count()) {
-        page->write_unlock();
-        throw IOException("try to unpin page with pin_count == 0");
-    }
-
     page->set_dirty(dirty);
-    page->unpin();
 
-    if (!page->get_pin_count()) {
+    int pin_count = page->unpin();
+    if (pin_count == 1) {
         lru_insert(page->get_id());
     }
-
-    page->write_unlock();
 
     flush_page(page);
 }
