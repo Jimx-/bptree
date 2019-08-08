@@ -25,7 +25,7 @@ class BaseNode {
 public:
     BaseNode(BaseNode* parent, PageID pid, KeyComparator kcmp = KeyComparator{},
              KeyEq keq = KeyEq{})
-        : pid(pid), parent(parent), kcmp(kcmp), keq(keq), size(0)
+        : pid(pid), parent(parent), kcmp(kcmp), keq(keq), size(0), version_counter(0b100)
     {}
 
     PageID get_pid() const { return pid; }
