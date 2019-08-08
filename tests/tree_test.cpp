@@ -20,8 +20,7 @@ TEST(TreeTest, HandleInsert)
     char* tmp = tmpnam(NULL);
     srand(time(0));
 
-    bptree::HeapFile heap_file(tmp, true, 4096);
-    bptree::HeapPageCache page_cache(&heap_file, 1024);
+    bptree::MemPageCache page_cache(1024);
 
     bptree::BTree<8, KeyType, ValueType> tree(&page_cache);
 
@@ -35,7 +34,8 @@ TEST(TreeTest, HandleInsert)
 
 TEST(TreeTest, HandleConcurrentInsert)
 {
-    bptree::MemPageCache page_cache(4096);
+    // bptree::MemPageCache page_cache(4096);
+    bptree::HeapPageCache page_cache(tmpnam(nullptr), true, 4096);
     bptree::BTree<100, KeyType, ValueType> tree(&page_cache);
 
     high_resolution_clock::time_point t1 = high_resolution_clock::now();

@@ -145,9 +145,9 @@ public:
         if (!page) {
             return nullptr;
         }
-        auto* buf = page->lock();
+        const auto* buf = page->read_lock();
 
-        uint32_t tag = *reinterpret_cast<uint32_t*>(buf);
+        uint32_t tag = *reinterpret_cast<const uint32_t*>(buf);
         std::unique_ptr<BaseNode<K, V, KeyComparator, KeyEq>> node;
 
         if (tag == INNER_TAG) {
@@ -164,7 +164,7 @@ public:
         node->deserialize(&buf[sizeof(uint32_t)],
                           page->get_size() - sizeof(uint32_t));
 
-        page->unlock();
+        page->read_unlock();
         page_cache->unpin_page(page, false);
 
         return node;
@@ -175,14 +175,14 @@ public:
         auto page = page_cache->fetch_page(node->get_pid());
 
         if (!page) return;
-        auto* buf = page->lock();
+        auto* buf = page->write_lock();
         uint32_t tag = node->is_leaf() ? LEAF_TAG : INNER_TAG;
 
         *reinterpret_cast<uint32_t*>(buf) = tag;
         node->serialize(&buf[sizeof(uint32_t)],
                         page->get_size() - sizeof(uint32_t));
 
-        page->unlock();
+        page->write_unlock();
         page_cache->unpin_page(page, true);
     }
 
@@ -348,12 +348,12 @@ private:
         auto page = page_cache->fetch_page(META_PAGE_ID);
         if (!page) return false;
 
-        auto* buf = page->lock();
+        const auto* buf = page->read_lock();
         buf += sizeof(uint32_t);
-        PageID root_pid = (PageID) * reinterpret_cast<uint32_t*>(buf);
+        PageID root_pid = (PageID) * reinterpret_cast<const uint32_t*>(buf);
         root = read_node(nullptr, root_pid);
 
-        page->unlock();
+        page->read_unlock();
         page_cache->unpin_page(page, false);
 
         return true;
@@ -362,14 +362,14 @@ private:
     void write_metadata()
     {
         auto page = page_cache->fetch_page(META_PAGE_ID);
-        auto* buf = page->lock();
+        auto* buf = page->write_lock();
 
         *reinterpret_cast<uint32_t*>(buf) = META_PAGE_MAGIC;
         buf += sizeof(uint32_t);
         *reinterpret_cast<uint32_t*>(buf) = (uint32_t)root->get_pid();
         buf += sizeof(uint32_t);
 
-        page->unlock();
+        page->write_unlock();
         page_cache->unpin_page(page, true);
     }
 };

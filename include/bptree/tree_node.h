@@ -10,6 +10,8 @@
 #include <ostream>
 #include <vector>
 
+#include <iostream>
+
 namespace bptree {
 
 class OLCRestart : public std::exception {};

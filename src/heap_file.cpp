@@ -48,10 +48,10 @@ void HeapFile::read_page(Page* page)
         throw IOException("page ID >= # pages");
     }
 
-    auto* buf = page->lock();
+    auto* buf = page->write_lock();
     lseek(fd, id * page_size, SEEK_SET);
     read(fd, buf, page_size);
-    page->unlock();
+    page->write_unlock();
 }
 
 void HeapFile::write_page(Page* page)
@@ -66,10 +66,10 @@ void HeapFile::write_page(Page* page)
         throw IOException("page ID >= # pages");
     }
 
-    auto* buf = page->lock();
+    const auto* buf = page->read_lock();
     lseek(fd, id * page_size, SEEK_SET);
     write(fd, buf, page_size);
-    page->unlock();
+    page->read_unlock();
 }
 
 void HeapFile::open(bool create)
