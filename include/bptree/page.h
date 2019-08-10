@@ -5,7 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
-#include <shared_mutex>
+#include <mutex>
 
 namespace bptree {
 
@@ -20,22 +20,12 @@ public:
         buffer = std::make_unique<uint8_t[]>(size);
     }
 
-    uint8_t* write_lock()
+    uint8_t* lock()
     {
         mutex.lock();
         return buffer.get();
     }
-    void write_unlock() { mutex.unlock(); }
-
-    const uint8_t* read_lock()
-    {
-        mutex.lock_shared();
-        return buffer.get();
-    }
-    void read_unlock()
-    {
-        mutex.unlock_shared();
-    }
+    void unlock() { mutex.unlock(); }
 
     uint8_t* get_buffer_locked() {
         return buffer.get();
@@ -57,7 +47,7 @@ private:
     size_t size;
     bool dirty;
     std::atomic<int32_t> pin_count;
-    std::shared_mutex mutex;
+    std::mutex mutex;
 };
 
 } // namespace bptree

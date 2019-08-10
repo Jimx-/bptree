@@ -44,7 +44,6 @@ private:
     std::unordered_map<PageID, std::list<PageID>::iterator> lru_map;
 
     Page* alloc_page(PageID new_id);
-    void add_page(Page* page);
 
     void lru_insert(PageID id);
     void lru_erase(PageID id);

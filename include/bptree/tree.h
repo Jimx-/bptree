@@ -22,6 +22,7 @@ public:
 
         if (create) {
             auto page = page_cache->new_page();
+            page->unlock();
             assert(page->get_id() == META_PAGE_ID);
 
             root = create_node<LeafNode<N, K, V, KeySerializer, KeyComparator,
@@ -39,6 +40,7 @@ public:
         auto page = page_cache->new_page();
         auto node = std::make_unique<T>(this, parent, page->get_id());
         page_cache->unpin_page(page, false);
+        page->unlock();
 
         return node;
     }
@@ -145,7 +147,7 @@ public:
         if (!page) {
             return nullptr;
         }
-        const auto* buf = page->read_lock();
+        const auto* buf = page->get_buffer_locked();
 
         uint32_t tag = *reinterpret_cast<const uint32_t*>(buf);
         std::unique_ptr<BaseNode<K, V, KeyComparator, KeyEq>> node;
@@ -164,8 +166,8 @@ public:
         node->deserialize(&buf[sizeof(uint32_t)],
                           page->get_size() - sizeof(uint32_t));
 
-        page->read_unlock();
         page_cache->unpin_page(page, false);
+        page->unlock();
 
         return node;
     }
@@ -175,15 +177,15 @@ public:
         auto page = page_cache->fetch_page(node->get_pid());
 
         if (!page) return;
-        auto* buf = page->write_lock();
+        auto* buf = page->get_buffer_locked();
         uint32_t tag = node->is_leaf() ? LEAF_TAG : INNER_TAG;
 
         *reinterpret_cast<uint32_t*>(buf) = tag;
         node->serialize(&buf[sizeof(uint32_t)],
                         page->get_size() - sizeof(uint32_t));
 
-        page->write_unlock();
         page_cache->unpin_page(page, true);
+        page->unlock();
     }
 
     /* iterator interface */
@@ -348,13 +350,13 @@ private:
         auto page = page_cache->fetch_page(META_PAGE_ID);
         if (!page) return false;
 
-        const auto* buf = page->read_lock();
+        const auto* buf = page->get_buffer_locked();
         buf += sizeof(uint32_t);
         PageID root_pid = (PageID) * reinterpret_cast<const uint32_t*>(buf);
         root = read_node(nullptr, root_pid);
 
-        page->read_unlock();
         page_cache->unpin_page(page, false);
+        page->unlock();
 
         return true;
     }
@@ -362,15 +364,15 @@ private:
     void write_metadata()
     {
         auto page = page_cache->fetch_page(META_PAGE_ID);
-        auto* buf = page->write_lock();
+        auto* buf = page->get_buffer_locked();
 
         *reinterpret_cast<uint32_t*>(buf) = META_PAGE_MAGIC;
         buf += sizeof(uint32_t);
         *reinterpret_cast<uint32_t*>(buf) = (uint32_t)root->get_pid();
         buf += sizeof(uint32_t);
 
-        page->write_unlock();
         page_cache->unpin_page(page, true);
+        page->unlock();
     }
 };
 

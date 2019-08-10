@@ -23,8 +23,8 @@ public:
     size_t get_page_size() const { return page_size; }
 
     PageID new_page();
-    void read_page(Page* page);
-    void write_page(Page* page);
+    void read_page(PageID pid, uint8_t* buf);
+    void write_page(PageID pid, const uint8_t* buf);
 
 private:
     static const uint32_t MAGIC = 0xDEADBEEF;
