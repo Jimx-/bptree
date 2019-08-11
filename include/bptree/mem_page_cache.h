@@ -14,26 +14,29 @@ class MemPageCache : public AbstractPageCache {
 public:
     MemPageCache(size_t page_size) : page_size(page_size) { next_id.store(1); }
 
-    virtual Page* new_page()
+    virtual Page* new_page(boost::upgrade_lock<Page>& lock)
     {
         auto id = get_next_id();
-        std::unique_lock<std::shared_mutex> lock(mutex);
+        std::unique_lock<std::shared_mutex> guard(mutex);
         page_map[id] = std::make_unique<Page>(id, page_size);
-        return page_map[id].get();
+        Page* page = page_map[id].get();
+        lock = boost::upgrade_lock<Page>(*page);
+        return page;
     }
 
-    virtual Page* fetch_page(PageID id)
+    virtual Page* fetch_page(PageID id, boost::upgrade_lock<Page>& lock)
     {
-        std::shared_lock<std::shared_mutex> lock(mutex);
+        std::shared_lock<std::shared_mutex> guard(mutex);
         auto it = page_map.find(id);
         if (it == page_map.end()) return nullptr;
+        lock = boost::upgrade_lock<Page>(*it->second);
         return it->second.get();
     }
 
-    virtual void pin_page(Page* page) {}
-    virtual void unpin_page(Page* page, bool dirty) {}
+    virtual void pin_page(Page* page, boost::upgrade_lock<Page>&) {}
+    virtual void unpin_page(Page* page, bool dirty, boost::upgrade_lock<Page>&) {}
 
-    virtual void flush_page(Page* page) {}
+    virtual void flush_page(Page* page, boost::upgrade_lock<Page>&) {}
     virtual void flush_all_pages() {}
 
     virtual size_t size() const { return page_map.size(); }
