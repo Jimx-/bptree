@@ -13,11 +13,11 @@ HeapPageCache::HeapPageCache(std::string_view filename, bool create,
     this->page_size = page_size;
 }
 
-Page* HeapPageCache::alloc_page(PageID id)
+Page* HeapPageCache::alloc_page(PageID id, boost::upgrade_lock<Page>& lock)
 {
     if (size() < max_pages) {
         auto page = new Page(id, page_size);
-        page->lock();
+        lock = boost::upgrade_lock(*page);
         pages.emplace_back(page);
         page_map[id] = page;
 
@@ -33,12 +33,12 @@ Page* HeapPageCache::alloc_page(PageID id)
     assert(it != page_map.end());
 
     auto* page = it->second;
-    page->lock();
+    lock = boost::upgrade_lock(*page);
 
     page_map.erase(it);
 
     if (page->is_dirty()) {
-        flush_page(page);
+        flush_page(page, lock);
     }
     page->set_id(id);
     page_map[id] = page;
@@ -46,32 +46,33 @@ Page* HeapPageCache::alloc_page(PageID id)
     return page;
 }
 
-Page* HeapPageCache::new_page()
+Page* HeapPageCache::new_page(boost::upgrade_lock<Page>& lock)
 {
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard<std::mutex> guard(mutex);
 
     PageID new_id = heap_file->new_page();
-    auto page = alloc_page(new_id);
+    auto page = alloc_page(new_id, lock);
 
-    pin_page(page);
+    pin_page(page, lock);
 
     return page;
 }
 
-Page* HeapPageCache::fetch_page(PageID id)
+Page* HeapPageCache::fetch_page(PageID id, boost::upgrade_lock<Page>& lock)
 {
     bptree::Page* page = nullptr;
     {
-        std::lock_guard<std::mutex> lock(mutex);
+        std::lock_guard<std::mutex> guard(mutex);
 
         auto it = page_map.find(id);
 
         if (it == page_map.end()) {
-            auto page = alloc_page(id);
+            auto page = alloc_page(id, lock);
 
             try {
-                heap_file->read_page(page->get_id(), page->get_buffer_locked());
-                pin_page(page);
+                boost::upgrade_to_unique_lock<Page> ulock(lock);
+                heap_file->read_page(page, ulock);
+                pin_page(page, lock);
 
                 return page;
             } catch (const IOException&) {
@@ -80,21 +81,21 @@ Page* HeapPageCache::fetch_page(PageID id)
         }
 
         page = it->second;
-        pin_page(page);
+        pin_page(page, lock);
     }
 
-    page->lock();
+    lock = boost::upgrade_lock<Page>(*page);
     return page;
 }
 
-void HeapPageCache::pin_page(Page* page)
+void HeapPageCache::pin_page(Page* page, boost::upgrade_lock<Page>& lock)
 {
     if (page->pin() == 0) {
         lru_erase(page->get_id());
     }
 }
 
-void HeapPageCache::unpin_page(Page* page, bool dirty)
+void HeapPageCache::unpin_page(Page* page, bool dirty, boost::upgrade_lock<Page>& lock)
 {
     page->set_dirty(dirty);
 
@@ -103,13 +104,13 @@ void HeapPageCache::unpin_page(Page* page, bool dirty)
         lru_insert(page->get_id());
     }
 
-    flush_page(page);
+    flush_page(page, lock);
 }
 
-void HeapPageCache::flush_page(Page* page)
+void HeapPageCache::flush_page(Page* page, boost::upgrade_lock<Page>& lock)
 {
     if (page->is_dirty()) {
-        heap_file->write_page(page->get_id(), page->get_buffer_locked());
+        heap_file->write_page(page, lock);
 
         page->set_dirty(false);
     }

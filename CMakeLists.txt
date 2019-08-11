@@ -7,8 +7,24 @@ option(BPTREE_BUILD_TESTS "set ON to build library tests" OFF)
 
 set(TOPDIR ${PROJECT_SOURCE_DIR})
 
-include_directories(
+find_package(Boost COMPONENTS thread)
+if (NOT Boost_FOUND)
+    message(FATAL_ERROR "Fatal error: Boost (version >= 1.55) required.")
+else()
+    message(STATUS "Setting up BOOST")
+    message(STATUS " Includes - ${Boost_INCLUDE_DIRS}")
+    message(STATUS " Library  - ${Boost_LIBRARY_DIRS}")
+    message(STATUS " boost_thread ${Boost_THREAD_LIBRARY}")
+    link_directories(${Boost_LIBRARY_DIRS})
+endif (NOT Boost_FOUND)
+
+set(INCLUDE_DIRS
     ${TOPDIR}/include
+    ${Boost_INCLUDE_DIRS}
+)
+
+include_directories(
+    ${INCLUDE_DIRS}
 )
 
 set(SOURCE_FILES
@@ -32,7 +48,8 @@ set(LIBRARIES
 )
  
 add_library(bptree STATIC ${SOURCE_FILES} ${HEADER_FILES} ${EXT_SOURCE_FILES})
-target_link_libraries(bptree ${LIBRARIES}) 
+target_link_libraries(bptree ${LIBRARIES})
+target_include_directories(bptree PUBLIC ${INCLUDE_DIRS})
 install(TARGETS bptree DESTINATION lib)
 
 if (BPTREE_BUILD_TESTS)

@@ -36,8 +36,9 @@ PageID HeapFile::new_page()
     return new_page;
 }
 
-void HeapFile::read_page(PageID pid, uint8_t* buf)
+void HeapFile::read_page(Page* page, boost::upgrade_to_unique_lock<Page>& lock)
 {
+    auto pid = page->get_id();
     if (pid == Page::INVALID_PAGE_ID) {
         throw IOException("page ID is invalid");
     }
@@ -46,12 +47,14 @@ void HeapFile::read_page(PageID pid, uint8_t* buf)
         throw IOException("page ID >= # pages");
     }
 
+    auto* buf = page->get_buffer(lock);
     lseek(fd, pid * page_size, SEEK_SET);
     read(fd, buf, page_size);
 }
 
-void HeapFile::write_page(PageID pid, const uint8_t* buf)
+void HeapFile::write_page(Page* page, boost::upgrade_lock<Page>& lock)
 {
+    auto pid = page->get_id();
     if (pid == Page::INVALID_PAGE_ID) {
         throw IOException("page ID is invalid");
     }
@@ -60,6 +63,7 @@ void HeapFile::write_page(PageID pid, const uint8_t* buf)
         throw IOException("page ID >= # pages");
     }
 
+    const auto* buf = page->get_buffer(lock);
     lseek(fd, pid * page_size, SEEK_SET);
     write(fd, buf, page_size);
 }

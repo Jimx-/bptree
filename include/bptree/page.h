@@ -6,12 +6,14 @@
 #include <cstdint>
 #include <memory>
 #include <mutex>
+#include <boost/thread.hpp>
+#include <boost/thread/lockable_adapter.hpp>
 
 namespace bptree {
 
 typedef uint32_t PageID;
 
-class Page {
+class Page : public boost::upgrade_lockable_adapter<boost::shared_mutex> {
 public:
     static const PageID INVALID_PAGE_ID = 0;
 
@@ -20,14 +22,11 @@ public:
         buffer = std::make_unique<uint8_t[]>(size);
     }
 
-    uint8_t* lock()
-    {
-        mutex.lock();
+    uint8_t* get_buffer(boost::upgrade_to_unique_lock<Page>&) {
         return buffer.get();
     }
-    void unlock() { mutex.unlock(); }
 
-    uint8_t* get_buffer_locked() {
+    const uint8_t* get_buffer(boost::upgrade_lock<Page>&) {
         return buffer.get();
     }
 

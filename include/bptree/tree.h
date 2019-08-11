@@ -21,9 +21,11 @@ public:
         bool create = !read_metadata();
 
         if (create) {
-            auto page = page_cache->new_page();
-            page->unlock();
-            assert(page->get_id() == META_PAGE_ID);
+            {
+                boost::upgrade_lock<Page> lock;
+                auto page = page_cache->new_page(lock);
+                assert(page->get_id() == META_PAGE_ID);
+            }
 
             root = create_node<LeafNode<N, K, V, KeySerializer, KeyComparator,
                                         KeyEq, ValueSerializer>>(nullptr);
@@ -37,10 +39,10 @@ public:
             BaseNode<K, V, KeyComparator, KeyEq>, T>::value>::type* = nullptr>
     std::unique_ptr<T> create_node(BaseNode<K, V, KeyComparator, KeyEq>* parent)
     {
-        auto page = page_cache->new_page();
+        boost::upgrade_lock<Page> lock;
+        auto page = page_cache->new_page(lock);
         auto node = std::make_unique<T>(this, parent, page->get_id());
-        page_cache->unpin_page(page, false);
-        page->unlock();
+        page_cache->unpin_page(page, false, lock);
 
         return node;
     }
@@ -142,12 +144,13 @@ public:
     std::unique_ptr<BaseNode<K, V, KeyComparator, KeyEq>>
     read_node(BaseNode<K, V, KeyComparator, KeyEq>* parent, PageID pid)
     {
-        auto page = page_cache->fetch_page(pid);
+        boost::upgrade_lock<Page> lock;
+        auto page = page_cache->fetch_page(pid, lock);
 
         if (!page) {
             return nullptr;
         }
-        const auto* buf = page->get_buffer_locked();
+        const auto* buf = page->get_buffer(lock);
 
         uint32_t tag = *reinterpret_cast<const uint32_t*>(buf);
         std::unique_ptr<BaseNode<K, V, KeyComparator, KeyEq>> node;
@@ -166,26 +169,27 @@ public:
         node->deserialize(&buf[sizeof(uint32_t)],
                           page->get_size() - sizeof(uint32_t));
 
-        page_cache->unpin_page(page, false);
-        page->unlock();
-
+        page_cache->unpin_page(page, false, lock);
         return node;
     }
 
     void write_node(const BaseNode<K, V, KeyComparator, KeyEq>* node)
     {
-        auto page = page_cache->fetch_page(node->get_pid());
+        boost::upgrade_lock<Page> lock;
+        auto page = page_cache->fetch_page(node->get_pid(), lock);
 
-        if (!page) return;
-        auto* buf = page->get_buffer_locked();
-        uint32_t tag = node->is_leaf() ? LEAF_TAG : INNER_TAG;
+        {
+            boost::upgrade_to_unique_lock<Page> ulock(lock);
+            if (!page) return;
+            auto* buf = page->get_buffer(ulock);
+            uint32_t tag = node->is_leaf() ? LEAF_TAG : INNER_TAG;
 
-        *reinterpret_cast<uint32_t*>(buf) = tag;
-        node->serialize(&buf[sizeof(uint32_t)],
-                        page->get_size() - sizeof(uint32_t));
+            *reinterpret_cast<uint32_t*>(buf) = tag;
+            node->serialize(&buf[sizeof(uint32_t)],
+                            page->get_size() - sizeof(uint32_t));
+        }
 
-        page_cache->unpin_page(page, true);
-        page->unlock();
+        page_cache->unpin_page(page, true, lock);
     }
 
     /* iterator interface */
@@ -347,32 +351,36 @@ private:
     /* metadata: | magic(4 bytes) | root page id(4 bytes) | */
     bool read_metadata()
     {
-        auto page = page_cache->fetch_page(META_PAGE_ID);
+        boost::upgrade_lock<Page> lock;
+        auto page = page_cache->fetch_page(META_PAGE_ID, lock);
         if (!page) return false;
 
-        const auto* buf = page->get_buffer_locked();
+        const auto* buf = page->get_buffer(lock);
         buf += sizeof(uint32_t);
         PageID root_pid = (PageID) * reinterpret_cast<const uint32_t*>(buf);
         root = read_node(nullptr, root_pid);
 
-        page_cache->unpin_page(page, false);
-        page->unlock();
+        page_cache->unpin_page(page, false, lock);
 
         return true;
     }
 
     void write_metadata()
     {
-        auto page = page_cache->fetch_page(META_PAGE_ID);
-        auto* buf = page->get_buffer_locked();
+        boost::upgrade_lock<Page> lock;
+        auto page = page_cache->fetch_page(META_PAGE_ID, lock);
 
-        *reinterpret_cast<uint32_t*>(buf) = META_PAGE_MAGIC;
-        buf += sizeof(uint32_t);
-        *reinterpret_cast<uint32_t*>(buf) = (uint32_t)root->get_pid();
-        buf += sizeof(uint32_t);
+        {
+            boost::upgrade_to_unique_lock<Page> ulock(lock);
+            auto* buf = page->get_buffer(ulock);
 
-        page_cache->unpin_page(page, true);
-        page->unlock();
+            *reinterpret_cast<uint32_t*>(buf) = META_PAGE_MAGIC;
+            buf += sizeof(uint32_t);
+            *reinterpret_cast<uint32_t*>(buf) = (uint32_t)root->get_pid();
+            buf += sizeof(uint32_t);
+        }
+
+        page_cache->unpin_page(page, true, lock);
     }
 };
 
