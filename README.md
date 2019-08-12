@@ -1,5 +1,4 @@
 # BPTree
-------------
 A thread-safe B+ tree implementation with disk-based storage that supports millions of key-value pairs
 
 ## Example
