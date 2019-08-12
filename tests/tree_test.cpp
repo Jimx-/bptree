@@ -36,15 +36,15 @@ TEST(TreeTest, HandleConcurrentInsert)
 {
     // bptree::MemPageCache page_cache(4096);
     bptree::HeapPageCache page_cache(tmpnam(nullptr), true, 4096);
-    bptree::BTree<100, KeyType, ValueType> tree(&page_cache);
+    bptree::BTree<256, KeyType, ValueType> tree(&page_cache);
 
     high_resolution_clock::time_point t1 = high_resolution_clock::now();
 
     std::vector<std::thread> threads;
     for (int i = 0; i < 10; i++) {
         threads.emplace_back([i, &tree]() {
-            for (int j = 0; j < 1000; j++) {
-                tree.insert(i * 1000 + j, j);
+            for (int j = 0; j < 1000000; j++) {
+                tree.insert(i * 1000000 + j, j);
             }
         });
     }
@@ -55,14 +55,23 @@ TEST(TreeTest, HandleConcurrentInsert)
 
     high_resolution_clock::time_point t2 = high_resolution_clock::now();
 
-    std::vector<ValueType> values;
-    for (int i = 0; i < 10000; i++) {
-        values.clear();
-        tree.get_value(i, values);
-        EXPECT_EQ(values.size(), 1);
-        if (values.size() == 1) {
-            EXPECT_EQ(values.front(), i % 1000);
-        }
+    threads.clear();
+    for (int i = 0; i < 10; i++) {
+        threads.emplace_back([i, &tree]() {
+            std::vector<ValueType> values;
+            for (int j = 0; j < 1000000; j++) {
+                values.clear();
+                tree.get_value(i * 1000000 + j, values);
+                EXPECT_EQ(values.size(), 1);
+                if (values.size() == 1) {
+                    EXPECT_EQ(values.front(), j);
+                }
+            }
+        });
+    }
+
+    for (auto&& p : threads) {
+        p.join();
     }
 
     high_resolution_clock::time_point t3 = high_resolution_clock::now();
