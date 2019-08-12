@@ -35,11 +35,12 @@ Page* HeapPageCache::alloc_page(PageID id, boost::upgrade_lock<Page>& lock)
     auto* page = it->second;
     lock = boost::upgrade_lock(*page);
 
-    page_map.erase(it);
-
     if (page->is_dirty()) {
         flush_page(page, lock);
     }
+
+    boost::upgrade_to_unique_lock<Page> ulock(lock);
+    page_map.erase(it);
     page->set_id(id);
     page_map[id] = page;
 

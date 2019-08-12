@@ -25,7 +25,7 @@ HeapFile::~HeapFile()
 
 PageID HeapFile::new_page()
 {
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard<std::mutex> guard(mutex);
 
     PageID new_page = (PageID)file_size_pages;
     ftruncate(fd, file_size_pages * page_size);
@@ -38,6 +38,8 @@ PageID HeapFile::new_page()
 
 void HeapFile::read_page(Page* page, boost::upgrade_to_unique_lock<Page>& lock)
 {
+    std::lock_guard<std::mutex> guard(mutex);
+
     auto pid = page->get_id();
     if (pid == Page::INVALID_PAGE_ID) {
         throw IOException("page ID is invalid");
@@ -48,12 +50,19 @@ void HeapFile::read_page(Page* page, boost::upgrade_to_unique_lock<Page>& lock)
     }
 
     auto* buf = page->get_buffer(lock);
-    lseek(fd, pid * page_size, SEEK_SET);
+
+    int retval;
+    if ((retval = lseek(fd, (off_t)pid * page_size, SEEK_SET)) != (off_t)pid * page_size) {
+        throw IOException(("seek failed(error code: " + std::to_string(errno) + ")").c_str());
+    }
+
     read(fd, buf, page_size);
 }
 
 void HeapFile::write_page(Page* page, boost::upgrade_lock<Page>& lock)
 {
+    std::lock_guard<std::mutex> guard(mutex);
+
     auto pid = page->get_id();
     if (pid == Page::INVALID_PAGE_ID) {
         throw IOException("page ID is invalid");
@@ -64,7 +73,12 @@ void HeapFile::write_page(Page* page, boost::upgrade_lock<Page>& lock)
     }
 
     const auto* buf = page->get_buffer(lock);
-    lseek(fd, pid * page_size, SEEK_SET);
+
+    off_t retval;
+    if ((retval = lseek(fd, (off_t)pid * page_size, SEEK_SET)) != (off_t)pid * page_size) {
+         throw IOException(("seek failed(error code: " + std::to_string(errno) + ")").c_str());
+    }
+
     write(fd, buf, page_size);
 }
 
@@ -96,6 +110,7 @@ void HeapFile::open(bool create)
 
 void HeapFile::close()
 {
+    write_header();
     ::close(fd);
     fd = -1;
 }
