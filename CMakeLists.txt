@@ -45,6 +45,7 @@ set(EXT_SOURCE_FILES )
 
 set(LIBRARIES
     pthread
+    ${Boost_THREAD_LIBRARIES}
 )
  
 add_library(bptree STATIC ${SOURCE_FILES} ${HEADER_FILES} ${EXT_SOURCE_FILES})
