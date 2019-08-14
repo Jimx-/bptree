@@ -29,9 +29,17 @@ public:
 
             root = create_node<LeafNode<N, K, V, KeySerializer, KeyComparator,
                                         KeyEq, ValueSerializer>>(nullptr);
+            num_pairs.store(0);
             write_metadata();
         }
     }
+
+    ~BTree()
+    {
+        write_metadata();
+    }
+
+    size_t size() const { return num_pairs.load(); }
 
     template <
         typename T,
@@ -117,6 +125,8 @@ public:
                     continue;
                 }
 
+                num_pairs++;
+                write_metadata();
                 break;
             } catch (OLCRestart&) {
                 continue;
@@ -347,6 +357,7 @@ private:
 
     AbstractPageCache* page_cache;
     std::unique_ptr<BaseNode<K, V, KeyComparator, KeyEq>> root;
+    std::atomic<size_t> num_pairs;
 
     /* metadata: | magic(4 bytes) | root page id(4 bytes) | */
     bool read_metadata()
@@ -358,7 +369,10 @@ private:
         const auto* buf = page->get_buffer(lock);
         buf += sizeof(uint32_t);
         PageID root_pid = (PageID) * reinterpret_cast<const uint32_t*>(buf);
+        buf += sizeof(uint32_t);
+        size_t pair_count = *reinterpret_cast<const uint32_t*>(buf);
         root = read_node(nullptr, root_pid);
+        num_pairs.store(pair_count);
 
         page_cache->unpin_page(page, false, lock);
 
@@ -378,6 +392,7 @@ private:
             buf += sizeof(uint32_t);
             *reinterpret_cast<uint32_t*>(buf) = (uint32_t)root->get_pid();
             buf += sizeof(uint32_t);
+            *reinterpret_cast<uint32_t*>(buf) = (uint32_t)num_pairs.load();
         }
 
         page_cache->unpin_page(page, true, lock);
