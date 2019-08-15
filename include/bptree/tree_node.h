@@ -255,6 +255,21 @@ public:
                 throw OLCRestart();
             }
 
+            BaseNode<K, V, KeyComparator, KeyEq>* child;
+            try {
+                /* fetch the child for the high key after we split the node */
+                /* must be done here because fetching a child node that is not
+                   in cache causes the insertion to be restarted and we are not
+                   allowed to restart once we move the children from current
+                   node to the newly created node */
+                child = get_child(N / 2, true, version);
+            } catch (OLCRestart&) {
+                if (this->parent) {
+                    this->parent->write_unlock();
+                }
+                throw;
+            }
+
             /* safe to split now */
             auto right_sibling = tree->template create_node<InnerNode<
                 N, K, V, KeySerializer, KeyComparator, KeyEq, ValueSerializer>>(
@@ -280,7 +295,6 @@ public:
             this->size = N / 2;
 
             right_sibling->high_key = this->high_key;
-            auto child = get_child(this->size, true, version);
             this->high_key = child->get_high_key();
 
             tree->write_node(this);
