@@ -8,8 +8,6 @@
 
 namespace bptree {
 
-#define PAGE_SIZE 4096
-
 class MemPageCache : public AbstractPageCache {
 public:
     MemPageCache(size_t page_size) : page_size(page_size) { next_id.store(1); }
