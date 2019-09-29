@@ -34,10 +34,7 @@ public:
         }
     }
 
-    ~BTree()
-    {
-        write_metadata();
-    }
+    ~BTree() { write_metadata(); }
 
     size_t size() const { return num_pairs.load(); }
 
@@ -61,7 +58,8 @@ public:
             try {
                 value_list.clear();
                 auto* root_node = root.get();
-                root_node->get_values(key, true, false, nullptr, value_list, 0);
+                root_node->get_values(key, false, false, nullptr, value_list,
+                                      0);
                 if (root_node != root.get()) continue;
                 break;
             } catch (OLCRestart&) {
@@ -109,7 +107,6 @@ public:
                     root_sibling->set_parent(new_root.get());
 
                     new_root->set_size(1);
-                    new_root->high_key = root_sibling->get_high_key();
                     new_root->keys[0] = split_key;
                     new_root->child_pages[0] = root->get_pid();
                     new_root->child_pages[1] = root_sibling->get_pid();
@@ -282,7 +279,7 @@ public:
             : tree(tree), kcmp(kcmp)
         {
             ended = false;
-            tree->collect_values(key, true, key_buf, value_buf);
+            tree->collect_values(key, false, key_buf, value_buf);
             idx = std::lower_bound(key_buf.begin(), key_buf.end(), key, kcmp) -
                   key_buf.begin();
             if (idx == key_buf.size()) {
@@ -306,7 +303,7 @@ public:
         void get_next_batch()
         {
             K last_key = key_buf.back();
-            tree->collect_values(last_key, false, key_buf, value_buf);
+            tree->collect_values(last_key, true, key_buf, value_buf);
             idx = std::upper_bound(key_buf.begin(), key_buf.end(), last_key,
                                    kcmp) -
                   key_buf.begin();

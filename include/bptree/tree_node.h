@@ -25,7 +25,8 @@ class BaseNode {
 public:
     BaseNode(BaseNode* parent, PageID pid, KeyComparator kcmp = KeyComparator{},
              KeyEq keq = KeyEq{})
-        : pid(pid), parent(parent), kcmp(kcmp), keq(keq), size(0), version_counter(0b100)
+        : pid(pid), parent(parent), kcmp(kcmp), keq(keq), size(0),
+          version_counter(0b100)
     {}
 
     PageID get_pid() const { return pid; }
@@ -36,7 +37,6 @@ public:
     void set_parent(BaseNode* parent) { this->parent = parent; }
     size_t get_size() const { return size; }
     void set_size(size_t size) { this->size = size; }
-    K get_high_key() const { return high_key; }
 
     virtual void serialize(uint8_t* buf, size_t size) const = 0;
     virtual void deserialize(const uint8_t* buf, size_t size) = 0;
@@ -97,7 +97,6 @@ protected:
     KeyComparator kcmp;
     KeyEq keq;
     std::atomic<uint64_t> version_counter;
-    K high_key;
 
     bool is_locked(uint64_t version) const { return (version & 0b10) == 0b10; }
     bool is_obsolete(uint64_t version) const { return (version & 1) == 1; }
@@ -170,11 +169,8 @@ public:
         *reinterpret_cast<uint32_t*>(buf) = (uint32_t)this->size;
         buf += sizeof(uint32_t);
         size -= sizeof(uint32_t);
-        size_t nbytes = key_serializer.serialize(buf, size, &this->high_key,
-                                                 (&this->high_key) + 1);
-        buf += nbytes;
-        size -= nbytes;
-        nbytes = key_serializer.serialize(buf, size, keys.begin(), keys.end());
+        size_t nbytes =
+            key_serializer.serialize(buf, size, keys.begin(), keys.end());
         buf += nbytes;
         size -= nbytes;
         ::memcpy(buf, child_pages.begin(), sizeof(PageID) * N);
@@ -184,11 +180,7 @@ public:
         this->size = (size_t) * reinterpret_cast<const uint32_t*>(buf);
         buf += sizeof(uint32_t);
         size -= sizeof(uint32_t);
-        size_t nbytes = key_serializer.deserialize(
-            &this->high_key, (&this->high_key) + 1, buf, size);
-        buf += nbytes;
-        size -= nbytes;
-        nbytes =
+        size_t nbytes =
             key_serializer.deserialize(keys.begin(), keys.end(), buf, size);
         buf += nbytes;
         size -= nbytes;
@@ -213,16 +205,20 @@ public:
         }
 
         /* direct the search to the child */
-        int child_idx =
-            std::upper_bound(keys.begin(), keys.begin() + this->size, key,
-                             this->kcmp) -
-            keys.begin();
-        auto child = get_child(child_idx, false, version);
-        if (!upper_bound && child_idx != this->size &&
-            child->get_high_key() <= key) {
-            child_idx++;
-            child = get_child(child_idx, false, version);
+        int child_idx;
+        if (upper_bound) {
+            child_idx =
+                std::upper_bound(keys.begin(), keys.begin() + this->size, key,
+                                 this->kcmp) -
+                keys.begin();
+        } else {
+            child_idx =
+                std::lower_bound(keys.begin(), keys.begin() + this->size, key,
+                                 this->kcmp) -
+                keys.begin();
         }
+
+        auto child = get_child(child_idx, false, version);
         if (!child) return;
 
         if (this->read_unlock_or_restart(version)) throw OLCRestart();
@@ -255,21 +251,6 @@ public:
                 throw OLCRestart();
             }
 
-            BaseNode<K, V, KeyComparator, KeyEq>* child;
-            try {
-                /* fetch the child for the high key after we split the node */
-                /* must be done here because fetching a child node that is not
-                   in cache causes the insertion to be restarted and we are not
-                   allowed to restart once we move the children from current
-                   node to the newly created node */
-                child = get_child(N / 2, true, version);
-            } catch (OLCRestart&) {
-                if (this->parent) {
-                    this->parent->write_unlock();
-                }
-                throw;
-            }
-
             /* safe to split now */
             auto right_sibling = tree->template create_node<InnerNode<
                 N, K, V, KeySerializer, KeyComparator, KeyEq, ValueSerializer>>(
@@ -294,9 +275,6 @@ public:
             split_key = this->keys[N / 2];
             this->size = N / 2;
 
-            right_sibling->high_key = this->high_key;
-            this->high_key = child->get_high_key();
-
             tree->write_node(this);
             tree->write_node(right_sibling.get());
 
@@ -314,18 +292,6 @@ public:
         if (this->parent) {
             if (this->parent->read_unlock_or_restart(parent_version))
                 throw OLCRestart();
-        }
-
-        if (this->high_key < key) {
-            /* upgrade the lock and upate high key */
-            version =
-                this->upgrade_to_write_lock_or_restart(version, need_restart);
-            if (need_restart) throw OLCRestart();
-
-            if (this->high_key < key) this->high_key = key;
-            tree->write_node(this);
-            this->write_unlock();
-            throw OLCRestart();
         }
 
         auto it = std::upper_bound(keys.begin(), keys.begin() + this->size, key,
@@ -419,11 +385,8 @@ public:
         *reinterpret_cast<uint32_t*>(buf) = (uint32_t)this->size;
         buf += sizeof(uint32_t);
         size -= sizeof(uint32_t);
-        size_t nbytes = key_serializer.serialize(buf, size, &this->high_key,
-                                                 (&this->high_key) + 1);
-        buf += nbytes;
-        size -= nbytes;
-        nbytes = key_serializer.serialize(buf, size, keys.begin(), keys.end());
+        size_t nbytes =
+            key_serializer.serialize(buf, size, keys.begin(), keys.end());
         buf += nbytes;
         size -= nbytes;
         nbytes =
@@ -434,11 +397,7 @@ public:
         this->size = (size_t) * reinterpret_cast<const uint32_t*>(buf);
         buf += sizeof(uint32_t);
         size -= sizeof(uint32_t);
-        size_t nbytes = key_serializer.deserialize(
-            &this->high_key, (&this->high_key) + 1, buf, size);
-        buf += nbytes;
-        size -= nbytes;
-        nbytes =
+        size_t nbytes =
             key_serializer.deserialize(keys.begin(), keys.end(), buf, size);
         buf += nbytes;
         size -= nbytes;
@@ -517,11 +476,8 @@ public:
             ::memcpy(right_sibling->values.begin(), &this->values[N / 2],
                      right_sibling->size * sizeof(V));
 
-            split_key = this->keys[N / 2];
+            split_key = this->keys[N / 2 - 1];
             this->size = N / 2;
-
-            right_sibling->high_key = this->high_key;
-            this->high_key = this->keys[this->size - 1];
 
             tree->write_node(this);
             tree->write_node(right_sibling.get());
@@ -556,7 +512,6 @@ public:
         keys[pos] = key;
         values[pos] = val;
         this->size++;
-        this->high_key = keys[this->size - 1];
 
         tree->write_node(this);
         this->write_unlock();
@@ -567,7 +522,6 @@ public:
     virtual void print(std::ostream& os, const std::string& padding = "")
     {
         os << padding << "Page ID: " << this->get_pid() << std::endl;
-        os << padding << "High key: " << this->high_key << std::endl;
 
         for (int i = 0; i < this->size; i++) {
             os << padding << keys[i] << " -> " << values[i] << std::endl;
