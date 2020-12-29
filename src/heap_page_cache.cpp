@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <iostream>
 
 namespace bptree {
 
@@ -76,7 +77,8 @@ Page* HeapPageCache::fetch_page(PageID id, boost::upgrade_lock<Page>& lock)
                 pin_page(page, lock);
 
                 return page;
-            } catch (const IOException&) {
+            } catch (IOException e) {
+                std::cerr << "Failed to read page: " << e.what() << std::endl;
                 return nullptr;
             }
         }
