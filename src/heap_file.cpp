@@ -5,6 +5,7 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include <sstream>
 
 namespace bptree {
 
@@ -42,18 +43,24 @@ void HeapFile::read_page(Page* page, boost::upgrade_to_unique_lock<Page>& lock)
 
     auto pid = page->get_id();
     if (pid == Page::INVALID_PAGE_ID) {
-        throw IOException("page ID is invalid");
+        std::stringstream ss;
+        ss << "page ID (" << pid << ") is invalid";
+        throw IOException(ss.str().c_str());
     }
 
     if (pid >= file_size_pages) {
-        throw IOException("page ID >= # pages");
+        std::stringstream ss;
+        ss << "page ID (" << pid << ") >= # pages (" << file_size_pages << ")";
+        throw IOException(ss.str().c_str());
     }
 
     auto* buf = page->get_buffer(lock);
 
-    int retval;
-    if ((retval = lseek(fd, (off_t)pid * page_size, SEEK_SET)) != (off_t)pid * page_size) {
-        throw IOException(("seek failed(error code: " + std::to_string(errno) + ")").c_str());
+    off64_t retval;
+    if ((retval = lseek64(fd, (off64_t)pid * page_size, SEEK_SET)) != (off64_t)pid * page_size) {
+        std::stringstream ss;
+        ss << "seek failed (return code: " << retval << ", errno: " << errno << ")";
+        throw IOException(ss.str().c_str());
     }
 
     read(fd, buf, page_size);
@@ -74,8 +81,8 @@ void HeapFile::write_page(Page* page, boost::upgrade_lock<Page>& lock)
 
     const auto* buf = page->get_buffer(lock);
 
-    off_t retval;
-    if ((retval = lseek(fd, (off_t)pid * page_size, SEEK_SET)) != (off_t)pid * page_size) {
+    off64_t retval;
+    if ((retval = lseek64(fd, (off64_t)pid * page_size, SEEK_SET)) != (off64_t)pid * page_size) {
          throw IOException(("seek failed(error code: " + std::to_string(errno) + ")").c_str());
     }
 
