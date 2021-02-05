@@ -122,7 +122,8 @@ void HeapPageCache::flush_page(Page* page, boost::upgrade_lock<Page>& lock)
 void HeapPageCache::flush_all_pages()
 {
     for (auto&& p : pages) {
-        // flush_page(p.get());
+        auto lock = boost::upgrade_lock<Page>(*p);
+        flush_page(p.get(), lock);
     }
 }
 
