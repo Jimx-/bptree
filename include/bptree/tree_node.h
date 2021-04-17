@@ -6,11 +6,11 @@
 
 #include <atomic>
 #include <functional>
+#include <iostream>
 #include <memory>
+#include <optional>
 #include <ostream>
 #include <vector>
-
-#include <iostream>
 
 namespace bptree {
 
@@ -41,11 +41,8 @@ public:
     virtual void serialize(uint8_t* buf, size_t size) const = 0;
     virtual void deserialize(const uint8_t* buf, size_t size) = 0;
 
-    /* if upper_bound is true, then upper bound is used when directing the
-     * search, otherwise lower bound is used. if collect is true, returns all
-     * keys and values in the leaf node, otherwise returns only the values that
-     * match the key */
-    virtual void get_values(const K& key, bool upper_bound, bool collect,
+    virtual void get_values(const K& key, bool collect,
+                            std::optional<K>* next_key,
                             std::vector<K>* key_list,
                             std::vector<V>& value_list,
                             uint64_t parent_version) = 0;
@@ -173,7 +170,7 @@ public:
             key_serializer.serialize(buf, size, keys.begin(), keys.end());
         buf += nbytes;
         size -= nbytes;
-        ::memcpy(buf, child_pages.begin(), sizeof(PageID) * N);
+        ::memcpy(buf, child_pages.begin(), sizeof(PageID) * (N + 1));
     }
     virtual void deserialize(const uint8_t* buf, size_t size)
     {
@@ -184,13 +181,14 @@ public:
             key_serializer.deserialize(keys.begin(), keys.end(), buf, size);
         buf += nbytes;
         size -= nbytes;
-        ::memcpy(child_pages.begin(), buf, sizeof(PageID) * N);
+        ::memcpy(child_pages.begin(), buf, sizeof(PageID) * (N + 1));
         for (auto&& p : child_cache) {
             p.reset();
         }
     }
 
-    virtual void get_values(const K& key, bool upper_bound, bool collect,
+    virtual void get_values(const K& key, bool collect,
+                            std::optional<K>* next_key,
                             std::vector<K>* key_list,
                             std::vector<V>& value_list, uint64_t parent_version)
     {
@@ -206,16 +204,14 @@ public:
 
         /* direct the search to the child */
         int child_idx;
-        if (upper_bound) {
-            child_idx =
-                std::upper_bound(keys.begin(), keys.begin() + this->size, key,
-                                 this->kcmp) -
-                keys.begin();
-        } else {
-            child_idx =
-                std::lower_bound(keys.begin(), keys.begin() + this->size, key,
-                                 this->kcmp) -
-                keys.begin();
+        child_idx = std::distance(keys.begin(),
+                                  std::upper_bound(keys.begin(),
+                                                   keys.begin() + this->size,
+                                                   key, this->kcmp));
+
+        if (next_key) std::cout << "Next key" << std::endl;
+        if (next_key && child_idx < this->size) {
+            *next_key = keys[child_idx];
         }
 
         auto child = get_child(child_idx, false, version);
@@ -223,7 +219,7 @@ public:
 
         if (this->read_unlock_or_restart(version)) throw OLCRestart();
 
-        child->get_values(key, upper_bound, collect, key_list, value_list,
+        child->get_values(key, collect, next_key, key_list, value_list,
                           version);
     }
 
@@ -405,7 +401,8 @@ public:
                                               size);
     }
 
-    virtual void get_values(const K& key, bool upper_bound, bool collect,
+    virtual void get_values(const K& key, bool collect,
+                            std::optional<K>* next_key,
                             std::vector<K>* key_list,
                             std::vector<V>& value_list, uint64_t parent_version)
     {
@@ -476,7 +473,7 @@ public:
             ::memcpy(right_sibling->values.begin(), &this->values[N / 2],
                      right_sibling->size * sizeof(V));
 
-            split_key = this->keys[N / 2 - 1];
+            split_key = this->keys[N / 2];
             this->size = N / 2;
 
             tree->write_node(this);

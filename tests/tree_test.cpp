@@ -32,10 +32,30 @@ TEST(TreeTest, HandleInsert)
     std::cout << tree;
 }
 
+TEST(TreeTest, HandleInsert2)
+{
+    const int N = 1000000;
+    bptree::MemPageCache page_cache(4096);
+    bptree::BTree<100, KeyType, ValueType> tree(&page_cache);
+
+    for (int i = 0; i < N; i++) {
+        tree.insert(i, i + 1);
+    }
+
+    for (int i = 0; i < N; i++) {
+        std::vector<ValueType> values;
+        tree.get_value(i, values);
+        EXPECT_EQ(values.size(), 1);
+        EXPECT_EQ(values.front(), i + 1);
+    }
+}
+
 TEST(TreeTest, HandleConcurrentInsert)
 {
     // bptree::MemPageCache page_cache(4096);
-    bptree::HeapPageCache page_cache(tmpnam(nullptr), true, 4096);
+    // bptree::HeapPageCache page_cache(tmpnam(nullptr), true, 4096);
+    const int N = 1000;
+    bptree::MemPageCache page_cache(4096);
     bptree::BTree<256, KeyType, ValueType> tree(&page_cache);
 
     high_resolution_clock::time_point t1 = high_resolution_clock::now();
@@ -43,8 +63,8 @@ TEST(TreeTest, HandleConcurrentInsert)
     std::vector<std::thread> threads;
     for (int i = 0; i < 10; i++) {
         threads.emplace_back([i, &tree]() {
-            for (int j = 0; j < 1000000; j++) {
-                tree.insert(i * 1000000 + j, j);
+            for (int j = 0; j < N; j++) {
+                tree.insert(i * N + j, j);
             }
         });
     }
@@ -59,9 +79,9 @@ TEST(TreeTest, HandleConcurrentInsert)
     for (int i = 0; i < 10; i++) {
         threads.emplace_back([i, &tree]() {
             std::vector<ValueType> values;
-            for (int j = 0; j < 1000000; j++) {
+            for (int j = 0; j < N; j++) {
                 values.clear();
-                tree.get_value(i * 1000000 + j, values);
+                tree.get_value(i * N + j, values);
                 EXPECT_EQ(values.size(), 1);
                 if (values.size() == 1) {
                     EXPECT_EQ(values.front(), j);
@@ -95,9 +115,12 @@ TEST(TreeTest, TreeIterator)
         sum1 += i;
     }
 
+    tree.print(std::cout);
     for (auto&& p : tree) {
+        std::cout << p.first << ", ";
         sum2 += p.first;
     }
+    std::cout << std::endl;
 
     EXPECT_EQ(sum1, sum2);
 }

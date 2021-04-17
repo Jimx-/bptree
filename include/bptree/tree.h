@@ -58,7 +58,7 @@ public:
             try {
                 value_list.clear();
                 auto* root_node = root.get();
-                root_node->get_values(key, false, false, nullptr, value_list,
+                root_node->get_values(key, false, nullptr, nullptr, value_list,
                                       0);
                 if (root_node != root.get()) continue;
                 break;
@@ -68,7 +68,7 @@ public:
         }
     }
 
-    void collect_values(const K& key, bool upper_bound,
+    void collect_values(const K& key, std::optional<K>* next_key,
                         std::vector<K>& key_list, std::vector<V>& value_list)
     {
         while (true) {
@@ -76,7 +76,7 @@ public:
                 key_list.clear();
                 value_list.clear();
                 auto* root_node = root.get();
-                root_node->get_values(key, upper_bound, true, &key_list,
+                root_node->get_values(key, true, next_key, &key_list,
                                       value_list, 0);
                 if (root_node != root.get()) continue;
                 break;
@@ -234,6 +234,7 @@ public:
         std::vector<V> value_buf;
         size_t idx;
         value_type kvp;
+        std::optional<K> next_key;
         bool ended;
         KeyComparator kcmp;
 
@@ -242,7 +243,7 @@ public:
         container_type* tree;
 
         iterator(container_type* tree, KeyComparator kcmp = KeyComparator{})
-            : tree(tree), kcmp(kcmp)
+            : tree(tree), kcmp(kcmp), next_key(std::nullopt)
         {
             ended = false;
             auto first_node = tree->read_node(
@@ -279,7 +280,7 @@ public:
             : tree(tree), kcmp(kcmp)
         {
             ended = false;
-            tree->collect_values(key, false, key_buf, value_buf);
+            tree->collect_values(key, &next_key, key_buf, value_buf);
             idx = std::lower_bound(key_buf.begin(), key_buf.end(), key, kcmp) -
                   key_buf.begin();
             if (idx == key_buf.size()) {
@@ -302,10 +303,15 @@ public:
 
         void get_next_batch()
         {
-            K last_key = key_buf.back();
-            tree->collect_values(last_key, true, key_buf, value_buf);
-            idx = std::upper_bound(key_buf.begin(), key_buf.end(), last_key,
-                                   kcmp) -
+            if (!next_key) {
+                ended = true;
+                return;
+            }
+
+            K key = *next_key;
+            next_key = std::nullopt;
+            tree->collect_values(key, &next_key, key_buf, value_buf);
+            idx = std::lower_bound(key_buf.begin(), key_buf.end(), key, kcmp) -
                   key_buf.begin();
             if (idx == key_buf.size()) {
                 ended = true;
