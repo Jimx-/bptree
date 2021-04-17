@@ -209,7 +209,6 @@ public:
                                                    keys.begin() + this->size,
                                                    key, this->kcmp));
 
-        if (next_key) std::cout << "Next key" << std::endl;
         if (next_key && child_idx < this->size) {
             *next_key = keys[child_idx];
         }
@@ -334,7 +333,7 @@ public:
         uint64_t version;
         this->get_child(0, true, version)->print(os, padding + "    ");
         for (int i = 0; i < this->size; i++) {
-            os << padding << keys[i] << std::endl;
+            // os << padding << keys[i] << std::endl;
             this->get_child(i + 1, true, version)->print(os, padding + "    ");
         }
     }
@@ -520,9 +519,9 @@ public:
     {
         os << padding << "Page ID: " << this->get_pid() << std::endl;
 
-        for (int i = 0; i < this->size; i++) {
-            os << padding << keys[i] << " -> " << values[i] << std::endl;
-        }
+        // for (int i = 0; i < this->size; i++) {
+        //     os << padding << keys[i] << " -> " << values[i] << std::endl;
+        // }
     }
 
 private:
