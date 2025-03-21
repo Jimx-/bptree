@@ -52,10 +52,8 @@ TEST(TreeTest, HandleInsert2)
 
 TEST(TreeTest, HandleConcurrentInsert)
 {
-    // bptree::MemPageCache page_cache(4096);
-    // bptree::HeapPageCache page_cache(tmpnam(nullptr), true, 4096);
-    const int N = 1000;
     bptree::MemPageCache page_cache(4096);
+    const int N = 1000;
     bptree::BTree<256, KeyType, ValueType> tree(&page_cache);
 
     high_resolution_clock::time_point t1 = high_resolution_clock::now();
@@ -110,15 +108,15 @@ TEST(TreeTest, TreeIterator)
     unsigned long long sum1, sum2;
     sum1 = sum2 = 0;
 
-    for (int i = 0; i < 1000; i++) {
+    for (int i = 0; i < 10000; i++) {
         tree.insert(i, i);
         sum1 += i;
     }
 
-    tree.print(std::cout);
-    for (auto&& p : tree) {
-        std::cout << p.first << ", ";
-        sum2 += p.first;
+    auto it = tree.begin(0);
+    while (it != tree.end()) {
+        sum2 += it->first;
+        it++;
     }
     std::cout << std::endl;
 

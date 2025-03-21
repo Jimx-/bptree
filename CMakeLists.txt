@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.5)
+cmake_minimum_required(VERSION 3.16)
 project(bptree)
 
 set(CMAKE_CXX_STANDARD 17)
@@ -54,7 +54,7 @@ target_include_directories(bptree PUBLIC ${INCLUDE_DIRS})
 install(TARGETS bptree DESTINATION lib)
 
 if (BPTREE_BUILD_TESTS)
-add_subdirectory(${TOPDIR}/3rdparty/googletest/googletest)
+add_subdirectory(${TOPDIR}/3rdparty/googletest)
 enable_testing()
 include_directories(${gtest_SOURCE_DIR}/include ${gtest_SOURCE_DIR})
 
